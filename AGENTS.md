@@ -11,6 +11,12 @@ Humans should also read [`README.md`](README.md) and [`CONTRIBUTING.md`](CONTRIB
 
 This file is **not** a product surface for end-user project `AGENTS.md` files that Grok itself may load from *other* working trees. It only guides work **on this codebase**.
 
+## Writing (docs, PR bodies, commit messages)
+
+- Assume a competent agent/reader. **Do not over-explain the obvious.**
+- Prefer short, directive language over encyclopedias, type catalogs, and “what is Conventional Commits” lectures.
+- Say what this fork requires; skip restating industry standards agents already know.
+
 ## Public-tree rules
 
 - Commit **technical** content only: architecture, build/test, protocols, generic remote-execution design.
@@ -95,6 +101,15 @@ Implementation work should live in crates above (or a small dedicated host binar
 - Use the operator’s **configured** git identity for the environment you are in. Do not hardcode identities in commits or in this file.
 - Do not rewrite published history unless an operator explicitly requests it and branch rules allow it.
 - Keep secrets out of git; use local env / secret managers outside the tree.
+
+## Commits and branches
+
+- **Commits and PR titles:** [Conventional Commits](https://www.conventionalcommits.org/). Squash merges use the PR title — keep it conventional.
+- **Branches:** type-prefixed / conventional branch names: `feat/…`, `fix/…`, `docs/…`, `ci/…`, `chore/…`, etc. (`<type>/<short-kebab-description>`). Work on branches; don’t land product work on `main` unless asked.
+
+## Pull requests and merge policy
+
+Open PRs freely when the task needs one. **Do not merge** (or enable auto-merge) unless the operator **explicitly** approves the merge in this conversation (“merge it”, “merge #N”, …). Opening a PR is not merge approval. After opening: post the URL, summarize, **stop and wait**.
 
 ## Remotes (typical fork layout)
 
