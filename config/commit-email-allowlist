@@ -1,0 +1,15 @@
+# Allowed author/committer email patterns (POSIX ERE).
+# Used by: `mise run identity:check`, lefthook pre-push, and (planned) CI.
+# One pattern per line. Lines starting with # and blank lines are ignored.
+# A commit passes if BOTH author and committer emails match at least one pattern.
+
+# Victor Software House org mail (human commits)
+@victor-software-house\.com$
+
+# GitHub web merges / UI commits (committer is often this exact address)
+^noreply@github\.com$
+
+# GitHub-generated user/bot noreply forms
+# e.g. 123456+login@users.noreply.github.com
+# e.g. 304785771+grokkybara[bot]@users.noreply.github.com
+@users\.noreply\.github\.com$

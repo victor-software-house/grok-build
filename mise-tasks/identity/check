@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+#MISE description="Fail if author/committer emails are outside config/commit-email-allowlist"
+#MISE alias="id-check"
+#USAGE arg "[range]" help="git range (default: unpushed commits)" default=""
+
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+# shellcheck source=../_lib/unpushed-range.sh
+source "${root}/mise-tasks/_lib/unpushed-range.sh"
+
+allowlist="${root}/config/commit-email-allowlist"
+[[ -f "$allowlist" ]] || { echo "identity:check: missing $allowlist" >&2; exit 2; }
+
+patterns=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+  line="${line%%#*}"
+  line="${line#"${line%%[![:space:]]*}"}"
+  line="${line%"${line##*[![:space:]]}"}"
+  [[ -z "$line" ]] && continue
+  patterns+=("$line")
+done <"$allowlist"
+[[ ${#patterns[@]} -gt 0 ]] || { echo "identity:check: empty allowlist" >&2; exit 2; }
+
+email_ok() {
+  local email="$1" p
+  for p in "${patterns[@]}"; do
+    # shellcheck disable=SC2053
+    [[ "$email" =~ $p ]] && return 0
+  done
+  return 1
+}
+
+# mise sets usage_range; CI/local can pass $1 or IDENTITY_RANGE.
+range="${usage_range:-${1:-${IDENTITY_RANGE:-}}}"
+if [[ -z "$range" ]]; then
+  unpushed_range
+  range="$UNPUSHED_RANGE"
+fi
+
+if ! git rev-list --count "$range" >/dev/null 2>&1; then
+  echo "identity:check: invalid range: $range" >&2
+  exit 2
+fi
+
+count=$(git rev-list --count "$range")
+if [[ "$count" -eq 0 ]]; then
+  echo "identity:check: nothing to check ($range)"
+  exit 0
+fi
+
+bad=0
+while IFS="$(printf '\t')" read -r sha author committer; do
+  ok=1
+  email_ok "$author" || { echo "FAIL $sha author=$author" >&2; ok=0; }
+  email_ok "$committer" || { echo "FAIL $sha committer=$committer" >&2; ok=0; }
+  [[ "$ok" -eq 0 ]] && bad=$((bad + 1))
+done < <(git log --format='%H%x09%ae%x09%ce' "$range")
+
+if [[ "$bad" -gt 0 ]]; then
+  echo "identity:check: $bad commit(s) outside allowlist ($range)" >&2
+  echo "See config/commit-email-allowlist" >&2
+  exit 1
+fi
+
+echo "identity:check: ok ($count in $range)"
