@@ -162,6 +162,10 @@ If `git merge --ff-only` refuses, **stop** and inspect: either rebase/replay for
 | [`AGENTS.md`](AGENTS.md) | This guide (canonical for coding agents) |
 | [`CLAUDE.md`](CLAUDE.md) | One-line import of this file for Claude-compatible tools |
 
+## Todo ledger
+
+Open work for this fork: [`TODO.md`](TODO.md).
+
 ## When stuck
 
 1. Read crate-level docs and `README.md` development section.
