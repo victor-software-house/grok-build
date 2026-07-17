@@ -96,6 +96,28 @@ Implementation work should live in crates above (or a small dedicated host binar
 - Do not rewrite published history unless an operator explicitly requests it and branch rules allow it.
 - Keep secrets out of git; use local env / secret managers outside the tree.
 
+## Pull requests and merge policy
+
+Agents may **open** PRs when that is part of the task. Agents must **not** merge (or enable auto-merge) unless the operator has **explicitly approved that merge in the current conversation**.
+
+| Allowed without extra approval | Requires explicit operator approval |
+|:--|:--|
+| Create a branch, commit, push | `gh pr merge`, merge via API, or “merge when green” |
+| Open a PR (`gh pr create` / REST) | Squash/rebase/merge of that PR |
+| Update PR description, re-request CI | Force-push to default branch |
+| Report PR URL and wait | Closing/reopening PRs in a way that lands code on `main` |
+
+### Process (default)
+
+1. Implement on a feature branch; push to `origin`.
+2. Open a PR targeting `main` (or the branch the operator named).
+3. **Stop.** Paste the PR URL and a short summary of what changed and what CI is expected to do.
+4. Wait for the operator to say to merge (or to request changes).
+5. Only after that approval: merge using the method they prefer (or ask if unspecified). Prefer **squash** for small doc-only PRs unless told otherwise.
+6. Do **not** chain “open PR → immediately merge” in one turn.
+
+“Open a PR”, “ship it when ready”, or “create the PR” alone is **not** merge approval. Merge only on clear language such as “merge it”, “merge #N”, or “approve and merge”.
+
 ## Remotes (typical fork layout)
 
 | Remote | Role |
