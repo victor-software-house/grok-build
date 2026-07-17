@@ -30,21 +30,51 @@ This file is **not** a product surface for end-user project `AGENTS.md` files th
 | CI (this fork) | `.github/workflows/build-macos-arm64.yml` |
 | Install helper (this fork) | `scripts/install-github-release.sh` |
 
-Prefer `cargo … -p <crate>` over full-workspace builds; workspace compiles are large.
+## Build and CI policy (prefer workflows)
 
-## Build and check
+**Default: do not build this monorepo on the operator laptop.** Full or release builds are heavy; offload them to **GitHub Actions on standard GitHub-hosted runners** (public repos get free Actions minutes — use the free tier, **not** larger/paid runner labels).
 
-Requirements: Rust via [`rust-toolchain.toml`](rust-toolchain.toml), [DotSlash](https://dotslash-cli.com) on `PATH` (for `bin/protoc`), then:
+| Prefer | Avoid |
+|:--|:--|
+| Push a branch / open a PR and let workflows run on **GitHub-hosted** runners | `cargo build --release` or full-workspace compiles on the local machine |
+| `workflow_dispatch` on [`.github/workflows/build-macos-arm64.yml`](.github/workflows/build-macos-arm64.yml) for verify/publish | Installing heavy toolchains “just to compile once” locally |
+| Standard labels (`ubuntu-latest`, `macos-*` free hosted images as defined in workflows) | Self-hosted runners, `*-large` / bigger paid runner SKUs unless an operator explicitly opts in |
+| Artifact / release download for binaries | Long local `target/` trees for this crate graph |
+
+### How agents should validate changes
+
+1. **Edit and review** code locally (or remotely via a tool daemon when available).
+2. **Commit and push**; trigger or rely on **GitHub Actions** for compile, test packaging, and release packaging.
+3. **Watch the workflow run** (`gh run list` / `gh run watch`) and fix from logs — do not fall back to a full local build because CI is “inconvenient.”
+4. Use a **local** `cargo check -p <crate>` / `cargo test -p <crate>` only when **strictly necessary** for a tiny, crate-scoped edit and the operator has asked for a quick loop. Even then:
+   - Prefer `-p <crate>` over workspace-wide builds.
+   - Prefer `cargo check` over `cargo build --release`.
+   - Do not start a release build or full monorepo compile without explicit operator approval.
+
+### Existing workflow (this fork)
+
+- [`.github/workflows/build-macos-arm64.yml`](.github/workflows/build-macos-arm64.yml) — `workflow_dispatch` on a standard hosted `macos-*` runner: build from a pinned upstream boundary, package, optional prerelease publish.
+- Trigger example:
 
 ```sh
-cargo check -p xai-grok-pager-bin
-cargo build -p xai-grok-pager-bin --release
+gh workflow run build-macos-arm64.yml -f publish=false -f version=v0.0.0-ci
+gh run watch
+```
+
+When adding CI: keep jobs on **GitHub-hosted free-tier runners**, cache deps where helpful, and avoid large/self-hosted runners unless documented and approved.
+
+### Local commands (exception path only)
+
+If a local cargo invocation is explicitly required:
+
+```sh
+cargo check -p xai-grok-pager-bin   # prefer check over build
 cargo test -p <crate>
 cargo clippy -p <crate>
 cargo fmt --all
 ```
 
-Config: root `clippy.toml`, `rustfmt.toml`.
+Requirements for local use: Rust via [`rust-toolchain.toml`](rust-toolchain.toml), [DotSlash](https://dotslash-cli.com) on `PATH` (for `bin/protoc`). Config: root `clippy.toml`, `rustfmt.toml`.
 
 ## Remote tool execution (design intent)
 
