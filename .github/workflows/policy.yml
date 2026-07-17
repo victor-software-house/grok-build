@@ -1,0 +1,52 @@
+# PR/main policy gates (identity + commit messages).
+# Skill: github-actions-templates — pin SHAs, least-privilege, no pull_request_target.
+
+name: Policy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: policy-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    name: identity + commitlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Resolve commit range
+        id: range
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            range="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            before="${{ github.event.before }}"
+            if [[ -z "$before" || "$before" == "0000000000000000000000000000000000000000" ]]; then
+              range="${{ github.sha }}^!"
+            else
+              range="${before}..${{ github.sha }}"
+            fi
+          fi
+          echo "range=${range}" >>"${GITHUB_OUTPUT}"
+          echo "Checking range: ${range}"
+
+      - name: identity:check
+        run: ./mise-tasks/identity/check "${{ steps.range.outputs.range }}"
+
+      - name: commitlint:range
+        run: ./mise-tasks/commitlint/range "${{ steps.range.outputs.range }}"
