@@ -96,94 +96,14 @@ Implementation work should live in crates above (or a small dedicated host binar
 - Do not rewrite published history unless an operator explicitly requests it and branch rules allow it.
 - Keep secrets out of git; use local env / secret managers outside the tree.
 
-## Commits: Conventional Commits
+## Commits and branches
 
-All commits on this fork use **[Conventional Commits](https://www.conventionalcommits.org/)** (v1.0.0).
-
-Format:
-
-```text
-<type>[optional scope]: <description>
-
-[optional body]
-
-[optional footer(s)]
-```
-
-| Type | Use for |
-|:--|:--|
-| `feat` | New user-facing capability |
-| `fix` | Bug fix |
-| `docs` | Documentation only |
-| `ci` | CI/CD, workflows, release automation |
-| `build` | Build system, deps that affect build |
-| `refactor` | Code change that is not feat/fix |
-| `test` | Tests only |
-| `chore` | Maintenance that does not fit above |
-| `perf` | Performance improvement |
-
-Rules:
-
-- **Description:** imperative, lowercase start preferred, no trailing period required; keep the first line ≤ ~72 characters.
-- **Scope (optional):** short area, e.g. `docs(agents): …`, `ci(macos): …`, `feat(tool-protocol): …`.
-- **Breaking changes:** `feat!:` / `fix!:` or a `BREAKING CHANGE:` footer.
-- Squash merges use the **PR title** as the default commit subject — PR titles must also be conventional.
-
-Examples:
-
-```text
-feat(tool-protocol): add session bind handshake
-fix(pager): restore terminal modes on child death
-docs(agents): require explicit approval before merging PRs
-ci: prefer GitHub-hosted runners for release builds
-```
-
-## Branches: conventional type prefixes
-
-Branch names follow the same **type vocabulary** as Conventional Commits (often called **conventional branch names** or **type-prefixed branches**).
-
-```text
-<type>/<short-kebab-description>
-```
-
-| Pattern | Example |
-|:--|:--|
-| `feat/…` | `feat/tool-daemon-listen` |
-| `fix/…` | `fix/cache-key-collision` |
-| `docs/…` | `docs/agents-pr-merge-policy` |
-| `ci/…` | `ci/macos-arm64-release` |
-| `refactor/…` | `refactor/tool-runtime-split` |
-| `chore/…` | `chore/sync-upstream-main` |
-| `test/…` | `test/tool-protocol-handshake` |
-
-Rules:
-
-- One primary type prefix; lowercase `kebab-case` after the slash.
-- No spaces, no personal names, no ticket-only names like `my-branch` or `temp`.
-- Optional: `type/scope-description` when helpful (`feat/tool-protocol-session-bind`).
-- Default branch stays `main`. Do not commit product work directly to `main` unless the operator says so.
+- **Commits and PR titles:** [Conventional Commits](https://www.conventionalcommits.org/). Squash merges use the PR title — keep it conventional.
+- **Branches:** type-prefixed / conventional branch names: `feat/…`, `fix/…`, `docs/…`, `ci/…`, `chore/…`, etc. (`<type>/<short-kebab-description>`). Work on branches; don’t land product work on `main` unless asked.
 
 ## Pull requests and merge policy
 
-Agents may **open** PRs when that is part of the task. Agents must **not** merge (or enable auto-merge) unless the operator has **explicitly approved that merge in the current conversation**.
-
-| Allowed without extra approval | Requires explicit operator approval |
-|:--|:--|
-| Create a branch, commit, push | `gh pr merge`, merge via API, or “merge when green” |
-| Open a PR (`gh pr create` / REST) | Squash/rebase/merge of that PR |
-| Update PR description, re-request CI | Force-push to default branch |
-| Report PR URL and wait | Closing/reopening PRs in a way that lands code on `main` |
-
-### Process (default)
-
-1. Implement on a feature branch; push to `origin`.
-2. Open a PR targeting `main` (or the branch the operator named).
-3. **Stop.** Paste the PR URL and a short summary of what changed and what CI is expected to do.
-4. Wait for the operator to say to merge (or to request changes).
-5. Only after that approval: merge using the method they prefer (or ask if unspecified). Prefer **squash** for small doc-only PRs unless told otherwise.
-6. Do **not** chain “open PR → immediately merge” in one turn.
-
-“Open a PR”, “ship it when ready”, or “create the PR” alone is **not** merge approval. Merge only on clear language such as “merge it”, “merge #N”, or “approve and merge”.
+Open PRs freely when the task needs one. **Do not merge** (or enable auto-merge) unless the operator **explicitly** approves the merge in this conversation (“merge it”, “merge #N”, …). Opening a PR is not merge approval. After opening: post the URL, summarize, **stop and wait**.
 
 ## Remotes (typical fork layout)
 
