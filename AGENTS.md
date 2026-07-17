@@ -104,12 +104,18 @@ Implementation work should live in crates above (or a small dedicated host binar
 
 ## Commits and branches
 
-- **Commits and PR titles:** [Conventional Commits](https://www.conventionalcommits.org/). Squash merges use the PR title — keep it conventional.
-- **Branches:** type-prefixed / conventional branch names: `feat/…`, `fix/…`, `docs/…`, `ci/…`, `chore/…`, etc. (`<type>/<short-kebab-description>`). Work on branches; don’t land product work on `main` unless asked.
+- **Commits and PR titles:** [Conventional Commits](https://www.conventionalcommits.org/). Keep PR titles conventional (squash uses the PR title).
+- **Branches:** `feat/…`, `fix/…`, `docs/…`, `ci/…`, `chore/…` (`<type>/<short-kebab>`). Work on branches; don’t land product work on `main` unless asked.
+- **`archive/**`:** permanent. Never delete or force-push on `origin`. Restore from SHA if removed by mistake. Exclude from cleanup. (GitHub ruleset enforces this.)
 
 ## Pull requests and merge policy
 
-Open PRs freely when the task needs one. **Do not merge** (or enable auto-merge) unless the operator **explicitly** approves the merge in this conversation (“merge it”, “merge #N”, …). Opening a PR is not merge approval. After opening: post the URL, summarize, **stop and wait**.
+- Open PRs freely. **Do not merge** (or auto-merge) without explicit operator approval in-thread. After opening: URL + summary, then stop.
+- **After approval — merge method:**
+  - **Default:** `gh pr merge <N> --merge --delete-branch`
+  - **Squash only if** the PR has one commit, or the operator says squash / drop commits / flatten: `--squash --delete-branch`
+  - Rebase merge only if explicitly requested.
+- **After merge:** `checkout main && pull --ff-only && fetch --prune`; delete local heads whose upstream is gone (`: gone]`). Never delete `archive/**`.
 
 ## Remotes (typical fork layout)
 
