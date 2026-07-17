@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#MISE description="Dispatch build-macos-arm64.yml (publish=false by default)"
+#USAGE flag "--publish" help="Publish a prerelease after the build"
+#USAGE flag "--version <version>" default="v0.0.0-ci" help="Release tag when publishing"
+
+set -euo pipefail
+
+args=(-f "version=${usage_version}")
+if [[ "${usage_publish:-false}" == "true" ]]; then
+  args+=(-f publish=true)
+else
+  args+=(-f publish=false)
+fi
+
+gh workflow run build-macos-arm64.yml "${args[@]}"
+gh run list --workflow=build-macos-arm64.yml --limit 3

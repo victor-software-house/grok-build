@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#MISE description="After merge: checkout main, ff-only pull, prune gone local branches"
+
+set -euo pipefail
+
+git checkout main
+git pull --ff-only
+git fetch --prune
+
+# Drop local branches whose upstream is gone (remote deleted on merge).
+# Never touch archive/**.
+while read -r branch; do
+  [[ -z "$branch" ]] && continue
+  [[ "$branch" == archive/* ]] && continue
+  git branch -d "$branch" 2>/dev/null || true
+done < <(git branch -vv | awk '/: gone]/{print $1}')

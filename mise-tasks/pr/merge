@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#MISE description="Merge PR with fork defaults: delete branch; 1 commit→squash, else merge-commit"
+#USAGE arg "<number>" help="PR number"
+#USAGE flag "--squash" help="Force squash (flatten multi-commit PR)"
+#USAGE flag "--merge-commit" help="Force merge commit (keep multi-commit history on a 1-commit PR)"
+
+set -euo pipefail
+
+n="${usage_number:?PR number required}"
+
+if [[ "${usage_squash:-false}" == "true" && "${usage_merge_commit:-false}" == "true" ]]; then
+  echo "pr:merge: pick at most one of --squash / --merge-commit" >&2
+  exit 2
+fi
+
+if [[ "${usage_squash:-false}" == "true" ]]; then
+  method=squash
+elif [[ "${usage_merge_commit:-false}" == "true" ]]; then
+  method=merge-commit
+else
+  count=$(gh pr view "$n" --json commits --jq '.commits | length')
+  if [[ "$count" -eq 1 ]]; then
+    method=squash
+  elif [[ "$count" -gt 1 ]]; then
+    method=merge-commit
+  else
+    echo "pr:merge: PR #$n has no commits" >&2
+    exit 1
+  fi
+  echo "pr:merge: PR #$n → $count commit(s) → $method (delete-branch)"
+fi
+
+# Defaults always enforced: delete head branch after merge.
+case "$method" in
+  squash) gh pr merge "$n" --squash --delete-branch ;;
+  merge-commit) gh pr merge "$n" --merge --delete-branch ;;
+esac

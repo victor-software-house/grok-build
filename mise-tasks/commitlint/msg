@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#MISE description="Validate one Conventional Commit message file (lefthook commit-msg)"
+#MISE alias=["commitlint"]
+#USAGE arg "<msgfile>" help="Path to commit message file (lefthook {1})"
+
+set -euo pipefail
+
+msgfile="${usage_msgfile:?commit message file required}"
+[[ -f "$msgfile" ]] || { echo "commitlint: not a file: $msgfile" >&2; exit 2; }
+
+subject=$(grep -vE '^(#|$)' "$msgfile" | head -n1 || true)
+root="$(git rev-parse --show-toplevel)"
+# shellcheck source=../_lib/commit-subject.sh
+source "${root}/mise-tasks/_lib/commit-subject.sh"
+validate_subject "$subject" ""

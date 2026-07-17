@@ -1,0 +1,15 @@
+# Thin callers only — work is in mise-tasks/ (see `mise tasks`).
+# Install: mise run hooks:install
+#
+# Identity is enforced in CI (.github/workflows/policy.yml), not here.
+# commit-msg stays local (git only hands the message file to this hook).
+
+commit-msg:
+  commands:
+    commitlint:
+      run: mise run commitlint:msg -- {1}
+
+post-checkout:
+  commands:
+    worktree-setup:
+      run: mise run worktree:setup
