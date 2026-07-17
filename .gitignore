@@ -1,3 +1,15 @@
 /target
 **/*.rs.bk
 .DS_Store
+
+# Local overrides — never commit machine-specific config
+# (secrets stay outside the tree entirely: fnox / env / secret manager)
+mise.local.toml
+.mise.local.toml
+lefthook-local.yml
+.envrc.local
+.envrc.private
+.env
+.env.*
+!.env.example
+fnox.local.toml

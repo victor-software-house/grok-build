@@ -1,0 +1,59 @@
+# Local tooling authority for this fork.
+# Interactive: direnv → `.envrc` → `use_mise_env` (never `mise activate`).
+# Agents / CI: `mise run …` or `mise x -- …`.
+# Multi-line work lives in mise-tasks/; this file keeps pins + one-liners.
+# Rust toolchain: rust-toolchain.toml (rustup), not here.
+
+min_version = "2026.7.7"
+
+[settings]
+lockfile = true
+env_cache = true
+env_cache_ttl = "4h"
+experimental = true
+
+[tools]
+lefthook = "latest"
+actionlint = "latest"
+shellcheck = "latest"
+dotslash = "latest"
+
+[env]
+_.path = ["{{config_root}}/bin"]
+
+[tasks.fmt]
+description = "cargo fmt --all (write)"
+run = "cargo fmt --all"
+
+[tasks."fmt:check"]
+description = "cargo fmt --all -- --check"
+run = "cargo fmt --all -- --check"
+
+[tasks.check]
+description = "cargo check -p <crate> (crate-scoped; no full workspace)"
+usage = '''
+arg "<crate>" help="Cargo package name (e.g. xai-grok-pager-bin)"
+'''
+run = "cargo check -p {{usage.crate}}"
+
+[tasks.clippy]
+description = "cargo clippy -p <crate> (crate-scoped)"
+usage = '''
+arg "<crate>" help="Cargo package name"
+'''
+run = "cargo clippy -p {{usage.crate}} -- -D warnings"
+
+[tasks.test]
+description = "cargo test -p <crate> (crate-scoped)"
+usage = '''
+arg "<crate>" help="Cargo package name"
+'''
+run = "cargo test -p {{usage.crate}}"
+
+[tasks."workflows:lint"]
+description = "actionlint on .github/workflows"
+run = "actionlint"
+
+[tasks."hooks:install"]
+description = "Install lefthook git hooks into this worktree"
+run = "lefthook install"
