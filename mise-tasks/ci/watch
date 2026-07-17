@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Watch the latest (or given) Actions run"
+#USAGE arg "[run_id]" help="Optional run id; default: latest workflow run" default=""
+
+set -euo pipefail
+
+if [[ -n "${usage_run_id:-}" ]]; then
+  gh run watch "$usage_run_id"
+else
+  gh run watch
+fi
