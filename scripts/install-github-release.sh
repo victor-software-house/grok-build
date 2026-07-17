@@ -7,8 +7,8 @@ prefix=${GROK_BUILD_PREFIX:-"$HOME/.local"}
 asset="grok-build-${version#v}-macos-arm64.tar.gz"
 base_url=${GROK_BUILD_BASE_URL:-"https://github.com/${repo}/releases/download/${version}"}
 
-if [ "$version" = __RELEASE_VERSION__ ]; then
-  printf '%s\n' 'Installer release version was not populated.' >&2
+if ! printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-vsh\.[0-9]+$'; then
+  printf 'Invalid or unpopulated release version: %s\n' "$version" >&2
   exit 1
 fi
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/grok-build-install.XXXXXX")

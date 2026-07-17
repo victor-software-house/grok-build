@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish a prerelease after the build passes
+        description: Publish a prerelease after build and installer checks pass
         required: true
         default: false
         type: boolean
@@ -21,14 +21,16 @@ concurrency:
   group: build-macos-arm64-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  UPSTREAM_SHA: 8adf9013a0929e5c7f1d4e849492d2387837a28d
+  RELEASE_VERSION: ${{ inputs.version }}
+
 jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 120
     env:
       CARGO_INCREMENTAL: "0"
-      UPSTREAM_SHA: 8adf9013a0929e5c7f1d4e849492d2387837a28d
-      RELEASE_VERSION: ${{ inputs.version || 'v0.2.101-vsh.1' }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -45,7 +47,7 @@ jobs:
             .github/workflows/build-macos-arm64.yml \
             scripts/install-github-release.sh | sort)
           test "$actual" = "$expected"
-          cp scripts/install-github-release.sh "$RUNNER_TEMP/install-github-release.sh"
+          mkdir -p "$HOME/.cargo/registry" "$HOME/.cargo/git" "$RUNNER_TEMP/grok-target"
           printf 'CARGO_TARGET_DIR=%s/grok-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
           git checkout --detach "$UPSTREAM_SHA"
           test "$(git rev-parse HEAD)" = "$UPSTREAM_SHA"
@@ -54,18 +56,54 @@ jobs:
           cargo --version
           df -h "$RUNNER_TEMP"
 
-      - name: Resolve local build tools
+      - name: Restore Cargo dependency cache
+        id: deps_cache_restore
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        continue-on-error: true
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macos-26-arm64-rust-1.92.0-deps-${{ hashFiles('Cargo.lock') }}
+
+      - name: Restore exact-source target cache
+        id: target_cache_restore
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ runner.temp }}/grok-target
+          key: macos-26-arm64-rust-1.92.0-target-${{ env.UPSTREAM_SHA }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Resolve pinned build tools without Homebrew
         run: |
           set -euo pipefail
-          command -v rg >/dev/null || brew install ripgrep
-          command -v protoc >/dev/null || brew install protobuf
+          tools="$RUNNER_TEMP/tools"
+          mkdir -p "$tools"
+
+          protoc_zip="$tools/protoc.zip"
+          curl -fsSL \
+            https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-osx-aarch_64.zip \
+            -o "$protoc_zip"
+          test "$(shasum -a 256 "$protoc_zip" | awk '{print $1}')" = \
+            2b8a3403cd097f95f3ba656e14b76c732b6b26d7f183330b11e36ef2bc028765
+          unzip -q "$protoc_zip" -d "$tools/protoc"
+
+          rg_archive="$tools/ripgrep.tar.gz"
+          curl -fsSL \
+            https://github.com/BurntSushi/ripgrep/releases/download/15.0.0/ripgrep-15.0.0-aarch64-apple-darwin.tar.gz \
+            -o "$rg_archive"
+          test "$(shasum -a 256 "$rg_archive" | awk '{print $1}')" = \
+            98bb2e61e7277ba0ea72d2ae2592497fd8d2940934a16b122448d302a6637e3b
+          tar -xzf "$rg_archive" -C "$tools"
+          rg="$tools/ripgrep-15.0.0-aarch64-apple-darwin/rg"
+          test -x "$rg"
           {
-            printf 'PROTOC=%s\n' "$(command -v protoc)"
-            printf 'GROK_SHELL_BUNDLE_RG_PATH=%s\n' "$(command -v rg)"
-            printf 'GROK_TOOLS_BUNDLE_RG_PATH=%s\n' "$(command -v rg)"
+            printf 'PROTOC=%s\n' "$tools/protoc/bin/protoc"
+            printf 'GROK_SHELL_BUNDLE_RG_PATH=%s\n' "$rg"
+            printf 'GROK_TOOLS_BUNDLE_RG_PATH=%s\n' "$rg"
           } >> "$GITHUB_ENV"
-          protoc --version
-          rg --version
+          "$tools/protoc/bin/protoc" --version
+          "$rg" --version
           df -h "$RUNNER_TEMP"
 
       - name: Build release CLI from exact upstream source
@@ -76,35 +114,113 @@ jobs:
           test -x "$CARGO_TARGET_DIR/release/xai-grok-pager"
           df -h "$RUNNER_TEMP"
 
-      - name: Package and smoke release
+      - name: Smoke and upload raw binary
+        run: |
+          set -euo pipefail
+          artifact="$CARGO_TARGET_DIR/release/xai-grok-pager"
+          raw="$RUNNER_TEMP/raw"
+          mkdir -p "$raw"
+          "$artifact" --version | tee "$raw/version.txt"
+          "$artifact" --help > "$raw/help.txt"
+          file "$artifact" | tee "$raw/file.txt"
+          file "$artifact" | grep -q 'Mach-O 64-bit executable arm64'
+          otool -L "$artifact" | tee "$raw/otool.txt"
+          shasum -a 256 "$artifact" | tee "$raw/sha256.txt"
+          stat -f '%z bytes' "$artifact" | tee "$raw/size.txt"
+          cp "$artifact" "$raw/xai-grok-pager"
+          printf '%s\n' "$UPSTREAM_SHA" > "$raw/source-commit.txt"
+
+      - name: Upload raw compiled binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: grok-build-raw-macos-arm64
+          path: ${{ runner.temp }}/raw
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Save Cargo dependency cache
+        if: steps.deps_cache_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        continue-on-error: true
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macos-26-arm64-rust-1.92.0-deps-${{ hashFiles('Cargo.lock') }}
+
+      - name: Measure target cache candidate
+        id: target_cache_size
+        run: |
+          set -euo pipefail
+          kib=$(du -sk "$CARGO_TARGET_DIR" | awk '{ print $1 }')
+          bytes=$((kib * 1024))
+          printf 'bytes=%s\n' "$bytes" | tee -a "$GITHUB_OUTPUT"
+          if [ "$bytes" -le 6442450944 ]; then
+            printf 'save=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'save=false\n' >> "$GITHUB_OUTPUT"
+            printf 'Skipping target cache: %s bytes exceeds 6 GiB limit; dependency cache remains enabled.\n' "$bytes"
+          fi
+
+      - name: Save exact-source target cache
+        if: steps.target_cache_restore.outputs.cache-hit != 'true' && steps.target_cache_size.outputs.save == 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/grok-target
+          key: macos-26-arm64-rust-1.92.0-target-${{ env.UPSTREAM_SHA }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Clean build intermediates
+        if: always()
+        run: rm -rf "${CARGO_TARGET_DIR:-$RUNNER_TEMP/grok-target}"
+
+  package:
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: grok-build-raw-macos-arm64
+          path: raw
+
+      - name: Package and test installer end to end
         run: |
           set -euo pipefail
           [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-vsh\.[0-9]+$ ]]
-          artifact="$CARGO_TARGET_DIR/release/xai-grok-pager"
+          test "$(cat raw/source-commit.txt)" = "$UPSTREAM_SHA"
+          test "$(shasum -a 256 raw/xai-grok-pager | awk '{print $1}')" = \
+            "$(awk '{print $1}' raw/sha256.txt)"
+          chmod 0755 raw/xai-grok-pager
+          file raw/xai-grok-pager | grep -q 'Mach-O 64-bit executable arm64'
+          raw/xai-grok-pager --version
+
           version_no_v=${RELEASE_VERSION#v}
           package_name="grok-build-${version_no_v}-macos-arm64"
           package_root="$RUNNER_TEMP/package/$package_name"
           release_root="$RUNNER_TEMP/release"
           mkdir -p "$package_root" "$release_root"
-          "$artifact" --version | tee "$package_root/version.txt"
-          "$artifact" --help > "$package_root/help.txt"
-          file "$artifact" | tee "$package_root/file.txt"
-          file "$artifact" | grep -q 'Mach-O 64-bit executable arm64'
-          otool -L "$artifact" | tee "$package_root/otool.txt"
-          stat -f '%z bytes' "$artifact" | tee "$package_root/size.txt"
-          cp "$artifact" "$package_root/xai-grok-pager"
+          cp raw/xai-grok-pager "$package_root/xai-grok-pager"
+          cp raw/version.txt raw/help.txt raw/file.txt raw/otool.txt raw/size.txt "$package_root/"
           ln -s xai-grok-pager "$package_root/grok"
           printf '%s\n' "$UPSTREAM_SHA" > "$package_root/source-commit.txt"
-          "$package_root/grok" --version
           tar -C "$RUNNER_TEMP/package" -czf "$release_root/$package_name.tar.gz" "$package_name"
-          sed "s/__RELEASE_VERSION__/$RELEASE_VERSION/g" \
-            "$RUNNER_TEMP/install-github-release.sh" > "$release_root/install-github-release.sh"
+          sed "s/__RELEASE_VERSION__/$RELEASE_VERSION/" \
+            scripts/install-github-release.sh > "$release_root/install-github-release.sh"
           chmod 0755 "$release_root/install-github-release.sh"
+          sh -n "$release_root/install-github-release.sh"
           if grep -q '__RELEASE_VERSION__' "$release_root/install-github-release.sh"; then
             printf '%s\n' 'Installer version placeholder was not replaced.' >&2
             exit 1
           fi
           (cd "$release_root" && shasum -a 256 "$package_name.tar.gz" > SHA256SUMS)
+
           server_log="$RUNNER_TEMP/installer-http.log"
           python3 -m http.server 8765 --bind 127.0.0.1 --directory "$release_root" > "$server_log" 2>&1 &
           server_pid=$!
@@ -123,7 +239,6 @@ jobs:
           kill "$server_pid"
           wait "$server_pid" 2>/dev/null || true
           trap - EXIT
-          test "$(cat "$package_root/source-commit.txt")" = "$UPSTREAM_SHA"
 
       - name: Upload release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -134,19 +249,13 @@ jobs:
           retention-days: 7
           compression-level: 0
 
-      - name: Clean build intermediates
-        if: always()
-        run: rm -rf "${CARGO_TARGET_DIR:-$RUNNER_TEMP/grok-target}"
-
   publish:
     if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs: build
+    needs: package
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
-      RELEASE_VERSION: ${{ inputs.version }}
-      UPSTREAM_SHA: 8adf9013a0929e5c7f1d4e849492d2387837a28d
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -158,17 +267,19 @@ jobs:
         run: |
           set -euo pipefail
           test "$RELEASE_VERSION" = v0.2.101-vsh.1
-          gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && {
+          gh api "repos/$GITHUB_REPOSITORY/git/commits/$UPSTREAM_SHA" --jq .sha \
+            | grep -qx "$UPSTREAM_SHA"
+          if gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             printf 'Release %s already exists\n' "$RELEASE_VERSION" >&2
             exit 1
-          }
+          fi
           cat > "$RUNNER_TEMP/release-notes.md" <<EOF
           Source-built Grok Build CLI for macOS arm64.
 
           - Upstream source: xai-org/grok-build@$UPSTREAM_SHA
           - Built on GitHub-hosted macos-26 (Apple Silicon)
           - Canonical binary: xai-grok-pager
-          - Installed command: grok (symlink)
+          - Installed command: grok (relative symlink)
           - Status: prerelease; upstream version 0.2.101 alpha
 
           Install:
