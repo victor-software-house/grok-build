@@ -2,11 +2,17 @@ name: Build macOS arm64 from source
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - build-ci
-    paths:
-      - .github/workflows/build-macos-arm64.yml
+    inputs:
+      publish:
+        description: Publish a prerelease after the build passes
+        required: true
+        default: false
+        type: boolean
+      version:
+        description: GitHub Release tag
+        required: true
+        default: v0.2.101-vsh.1
+        type: string
 
 permissions:
   contents: read
@@ -22,20 +28,27 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       UPSTREAM_SHA: 8adf9013a0929e5c7f1d4e849492d2387837a28d
+      RELEASE_VERSION: ${{ inputs.version || 'v0.2.101-vsh.1' }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Verify runner and source
+      - name: Verify runner and source boundary
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
           git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD
-          test "$(git diff --name-only "$UPSTREAM_SHA"..HEAD)" = ".github/workflows/build-macos-arm64.yml"
+          actual=$(git diff --name-only "$UPSTREAM_SHA"..HEAD | sort)
+          expected=$(printf '%s\n' \
+            .github/workflows/build-macos-arm64.yml \
+            scripts/install-github-release.sh | sort)
+          test "$actual" = "$expected"
+          cp scripts/install-github-release.sh "$RUNNER_TEMP/install-github-release.sh"
           printf 'CARGO_TARGET_DIR=%s/grok-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          printf 'source=%s\n' "$UPSTREAM_SHA" | tee "$RUNNER_TEMP/source.env"
+          git checkout --detach "$UPSTREAM_SHA"
+          test "$(git rev-parse HEAD)" = "$UPSTREAM_SHA"
           uname -a
           rustc --version
           cargo --version
@@ -55,35 +68,121 @@ jobs:
           rg --version
           df -h "$RUNNER_TEMP"
 
-      - name: Build release CLI from source
+      - name: Build release CLI from exact upstream source
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$UPSTREAM_SHA"
           cargo build --locked -p xai-grok-pager-bin --release
           test -x "$CARGO_TARGET_DIR/release/xai-grok-pager"
           df -h "$RUNNER_TEMP"
 
-      - name: Smoke and describe artifact
+      - name: Package and smoke release
         run: |
           set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-vsh\.[0-9]+$ ]]
           artifact="$CARGO_TARGET_DIR/release/xai-grok-pager"
-          mkdir -p "$RUNNER_TEMP/artifact"
-          "$artifact" --version | tee "$RUNNER_TEMP/artifact/version.txt"
-          "$artifact" --help > "$RUNNER_TEMP/artifact/help.txt"
-          file "$artifact" | tee "$RUNNER_TEMP/artifact/file.txt"
-          otool -L "$artifact" | tee "$RUNNER_TEMP/artifact/otool.txt"
-          shasum -a 256 "$artifact" | tee "$RUNNER_TEMP/artifact/sha256.txt"
-          stat -f '%z bytes' "$artifact" | tee "$RUNNER_TEMP/artifact/size.txt"
-          cp "$artifact" "$RUNNER_TEMP/artifact/xai-grok-pager"
-          printf '%s\n' "$UPSTREAM_SHA" > "$RUNNER_TEMP/artifact/source-commit.txt"
-      - name: Upload CLI artifact
+          version_no_v=${RELEASE_VERSION#v}
+          package_name="grok-build-${version_no_v}-macos-arm64"
+          package_root="$RUNNER_TEMP/package/$package_name"
+          release_root="$RUNNER_TEMP/release"
+          mkdir -p "$package_root" "$release_root"
+          "$artifact" --version | tee "$package_root/version.txt"
+          "$artifact" --help > "$package_root/help.txt"
+          file "$artifact" | tee "$package_root/file.txt"
+          file "$artifact" | grep -q 'Mach-O 64-bit executable arm64'
+          otool -L "$artifact" | tee "$package_root/otool.txt"
+          stat -f '%z bytes' "$artifact" | tee "$package_root/size.txt"
+          cp "$artifact" "$package_root/xai-grok-pager"
+          ln -s xai-grok-pager "$package_root/grok"
+          printf '%s\n' "$UPSTREAM_SHA" > "$package_root/source-commit.txt"
+          "$package_root/grok" --version
+          tar -C "$RUNNER_TEMP/package" -czf "$release_root/$package_name.tar.gz" "$package_name"
+          sed "s/__RELEASE_VERSION__/$RELEASE_VERSION/g" \
+            "$RUNNER_TEMP/install-github-release.sh" > "$release_root/install-github-release.sh"
+          chmod 0755 "$release_root/install-github-release.sh"
+          if grep -q '__RELEASE_VERSION__' "$release_root/install-github-release.sh"; then
+            printf '%s\n' 'Installer version placeholder was not replaced.' >&2
+            exit 1
+          fi
+          (cd "$release_root" && shasum -a 256 "$package_name.tar.gz" > SHA256SUMS)
+          server_log="$RUNNER_TEMP/installer-http.log"
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$release_root" > "$server_log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          sleep 1
+          install_prefix="$RUNNER_TEMP/install-proof"
+          GROK_BUILD_BASE_URL=http://127.0.0.1:8765 \
+            GROK_BUILD_PREFIX="$install_prefix" \
+            sh "$release_root/install-github-release.sh"
+          test -x "$install_prefix/bin/xai-grok-pager"
+          test "$(readlink "$install_prefix/bin/grok")" = xai-grok-pager
+          "$install_prefix/bin/grok" --version
+          rm -f "$install_prefix/bin/grok" "$install_prefix/bin/xai-grok-pager"
+          test ! -e "$install_prefix/bin/grok"
+          test ! -e "$install_prefix/bin/xai-grok-pager"
+          kill "$server_pid"
+          wait "$server_pid" 2>/dev/null || true
+          trap - EXIT
+          test "$(cat "$package_root/source-commit.txt")" = "$UPSTREAM_SHA"
+
+      - name: Upload release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: xai-grok-pager-macos-arm64
-          path: ${{ runner.temp }}/artifact
+          name: grok-build-release-assets
+          path: ${{ runner.temp }}/release
           if-no-files-found: error
           retention-days: 7
-          compression-level: 6
+          compression-level: 0
 
       - name: Clean build intermediates
         if: always()
         run: rm -rf "${CARGO_TARGET_DIR:-$RUNNER_TEMP/grok-target}"
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      UPSTREAM_SHA: 8adf9013a0929e5c7f1d4e849492d2387837a28d
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: grok-build-release-assets
+          path: release
+
+      - name: Publish source-pinned prerelease
+        run: |
+          set -euo pipefail
+          test "$RELEASE_VERSION" = v0.2.101-vsh.1
+          gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && {
+            printf 'Release %s already exists\n' "$RELEASE_VERSION" >&2
+            exit 1
+          }
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          Source-built Grok Build CLI for macOS arm64.
+
+          - Upstream source: xai-org/grok-build@$UPSTREAM_SHA
+          - Built on GitHub-hosted macos-26 (Apple Silicon)
+          - Canonical binary: xai-grok-pager
+          - Installed command: grok (symlink)
+          - Status: prerelease; upstream version 0.2.101 alpha
+
+          Install:
+
+          \`\`\`sh
+          curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_VERSION/install-github-release.sh | sh
+          \`\`\`
+
+          Override the user-writable prefix with \`GROK_BUILD_PREFIX=/path\`.
+          EOF
+          gh release create "$RELEASE_VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$UPSTREAM_SHA" \
+            --title "Grok Build 0.2.101 VSH source build 1" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --prerelease \
+            release/*
