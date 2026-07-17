@@ -103,13 +103,52 @@ Implementation work should live in crates above (or a small dedicated host binar
 | `origin` | Working fork (push feature branches / releases here) |
 | `upstream` | Public SpaceXAI tree (`xai-org/grok-build`) |
 
+## Syncing from upstream
+
+Upstream publishes periodic **“Synced from monorepo”** commits and updates root [`SOURCE_REV`](SOURCE_REV) (the monorepo SHA for this snapshot). Prefer a **fast-forward** of `main` when possible; never invent a parallel history of the upstream tree.
+
+### Check whether upstream moved
+
 ```sh
 git fetch upstream
-git log --oneline origin/main..upstream/main   # check for new upstream syncs
+git fetch origin
+git log --oneline origin/main..upstream/main   # commits we are missing
+git show upstream/main:SOURCE_REV              # new monorepo pin, if any
 ```
+
+### Bring `main` up to date (no local fork commits ahead)
+
+When `origin/main` is strictly behind `upstream/main` (no unique fork commits on `main` except already-merged work):
+
+```sh
+git checkout main
+git merge --ff-only upstream/main
+git push origin main
+```
+
+If `git merge --ff-only` refuses, **stop** and inspect: either rebase/replay fork-only commits on top of the new upstream tip, or open a sync PR instead of rewriting.
+
+### When this fork has commits on `main` (CI, docs, …)
+
+1. `git fetch upstream && git checkout main && git merge --ff-only upstream/main` if possible.
+2. If not FF-able: merge or rebase **fork-only** commits onto `upstream/main` on a branch (e.g. `chore/sync-upstream`), push, open a PR, let **GitHub-hosted CI** validate (see build policy above).
+3. Do **not** force-push `main` unless an operator explicitly allows it and org branch rules permit (this org may block force-pushes to the default branch).
+
+### After sync
+
+- Confirm [`SOURCE_REV`](SOURCE_REV) matches the intended upstream snapshot.
+- Re-run / dispatch fork workflows if packaging or release artifacts depend on the new pin.
+- Prefer CI over a local full rebuild (see **Build and CI policy**).
+
+## Companion files
+
+| File | Role |
+|:--|:--|
+| [`AGENTS.md`](AGENTS.md) | This guide (canonical for coding agents) |
+| [`CLAUDE.md`](CLAUDE.md) | One-line import of this file for Claude-compatible tools |
 
 ## When stuck
 
 1. Read crate-level docs and `README.md` development section.
-2. Scope to a single crate with `cargo check -p` / `cargo test -p`.
+2. Prefer GitHub Actions over local monorepo builds.
 3. Prefer extending existing protocol/runtime crates over new top-level systems.
