@@ -1,0 +1,89 @@
+name: Build macOS arm64 from source
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - build-ci
+    paths:
+      - .github/workflows/build-macos-arm64.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-macos-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      CARGO_INCREMENTAL: "0"
+      UPSTREAM_SHA: 8adf9013a0929e5c7f1d4e849492d2387837a28d
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify runner and source
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD
+          test "$(git diff --name-only "$UPSTREAM_SHA"..HEAD)" = ".github/workflows/build-macos-arm64.yml"
+          printf 'CARGO_TARGET_DIR=%s/grok-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'source=%s\n' "$UPSTREAM_SHA" | tee "$RUNNER_TEMP/source.env"
+          uname -a
+          rustc --version
+          cargo --version
+          df -h "$RUNNER_TEMP"
+
+      - name: Resolve local build tools
+        run: |
+          set -euo pipefail
+          command -v rg >/dev/null || brew install ripgrep
+          command -v protoc >/dev/null || brew install protobuf
+          {
+            printf 'PROTOC=%s\n' "$(command -v protoc)"
+            printf 'GROK_SHELL_BUNDLE_RG_PATH=%s\n' "$(command -v rg)"
+            printf 'GROK_TOOLS_BUNDLE_RG_PATH=%s\n' "$(command -v rg)"
+          } >> "$GITHUB_ENV"
+          protoc --version
+          rg --version
+          df -h "$RUNNER_TEMP"
+
+      - name: Build release CLI from source
+        run: |
+          set -euo pipefail
+          cargo build --locked -p xai-grok-pager-bin --release
+          test -x "$CARGO_TARGET_DIR/release/xai-grok-pager"
+          df -h "$RUNNER_TEMP"
+
+      - name: Smoke and describe artifact
+        run: |
+          set -euo pipefail
+          artifact="$CARGO_TARGET_DIR/release/xai-grok-pager"
+          mkdir -p "$RUNNER_TEMP/artifact"
+          "$artifact" --version | tee "$RUNNER_TEMP/artifact/version.txt"
+          "$artifact" --help > "$RUNNER_TEMP/artifact/help.txt"
+          file "$artifact" | tee "$RUNNER_TEMP/artifact/file.txt"
+          otool -L "$artifact" | tee "$RUNNER_TEMP/artifact/otool.txt"
+          shasum -a 256 "$artifact" | tee "$RUNNER_TEMP/artifact/sha256.txt"
+          stat -f '%z bytes' "$artifact" | tee "$RUNNER_TEMP/artifact/size.txt"
+          cp "$artifact" "$RUNNER_TEMP/artifact/xai-grok-pager"
+          printf '%s\n' "$UPSTREAM_SHA" > "$RUNNER_TEMP/artifact/source-commit.txt"
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: xai-grok-pager-macos-arm64
+          path: ${{ runner.temp }}/artifact
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 6
+
+      - name: Clean build intermediates
+        if: always()
+        run: rm -rf "${CARGO_TARGET_DIR:-$RUNNER_TEMP/grok-target}"
