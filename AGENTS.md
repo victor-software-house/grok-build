@@ -96,6 +96,73 @@ Implementation work should live in crates above (or a small dedicated host binar
 - Do not rewrite published history unless an operator explicitly requests it and branch rules allow it.
 - Keep secrets out of git; use local env / secret managers outside the tree.
 
+## Commits: Conventional Commits
+
+All commits on this fork use **[Conventional Commits](https://www.conventionalcommits.org/)** (v1.0.0).
+
+Format:
+
+```text
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+| Type | Use for |
+|:--|:--|
+| `feat` | New user-facing capability |
+| `fix` | Bug fix |
+| `docs` | Documentation only |
+| `ci` | CI/CD, workflows, release automation |
+| `build` | Build system, deps that affect build |
+| `refactor` | Code change that is not feat/fix |
+| `test` | Tests only |
+| `chore` | Maintenance that does not fit above |
+| `perf` | Performance improvement |
+
+Rules:
+
+- **Description:** imperative, lowercase start preferred, no trailing period required; keep the first line ≤ ~72 characters.
+- **Scope (optional):** short area, e.g. `docs(agents): …`, `ci(macos): …`, `feat(tool-protocol): …`.
+- **Breaking changes:** `feat!:` / `fix!:` or a `BREAKING CHANGE:` footer.
+- Squash merges use the **PR title** as the default commit subject — PR titles must also be conventional.
+
+Examples:
+
+```text
+feat(tool-protocol): add session bind handshake
+fix(pager): restore terminal modes on child death
+docs(agents): require explicit approval before merging PRs
+ci: prefer GitHub-hosted runners for release builds
+```
+
+## Branches: conventional type prefixes
+
+Branch names follow the same **type vocabulary** as Conventional Commits (often called **conventional branch names** or **type-prefixed branches**).
+
+```text
+<type>/<short-kebab-description>
+```
+
+| Pattern | Example |
+|:--|:--|
+| `feat/…` | `feat/tool-daemon-listen` |
+| `fix/…` | `fix/cache-key-collision` |
+| `docs/…` | `docs/agents-pr-merge-policy` |
+| `ci/…` | `ci/macos-arm64-release` |
+| `refactor/…` | `refactor/tool-runtime-split` |
+| `chore/…` | `chore/sync-upstream-main` |
+| `test/…` | `test/tool-protocol-handshake` |
+
+Rules:
+
+- One primary type prefix; lowercase `kebab-case` after the slash.
+- No spaces, no personal names, no ticket-only names like `my-branch` or `temp`.
+- Optional: `type/scope-description` when helpful (`feat/tool-protocol-session-bind`).
+- Default branch stays `main`. Do not commit product work directly to `main` unless the operator says so.
+
 ## Pull requests and merge policy
 
 Agents may **open** PRs when that is part of the task. Agents must **not** merge (or enable auto-merge) unless the operator has **explicitly approved that merge in the current conversation**.
