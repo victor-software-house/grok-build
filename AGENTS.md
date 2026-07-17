@@ -11,6 +11,12 @@ Humans should also read [`README.md`](README.md) and [`CONTRIBUTING.md`](CONTRIB
 
 This file is **not** a product surface for end-user project `AGENTS.md` files that Grok itself may load from *other* working trees. It only guides work **on this codebase**.
 
+## Writing (docs, PR bodies, commit messages)
+
+- Assume a competent agent/reader. **Do not over-explain the obvious.**
+- Prefer short, directive language over encyclopedias, type catalogs, and “what is Conventional Commits” lectures.
+- Say what this fork requires; skip restating industry standards agents already know.
+
 ## Public-tree rules
 
 - Commit **technical** content only: architecture, build/test, protocols, generic remote-execution design.
