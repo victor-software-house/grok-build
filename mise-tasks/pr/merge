@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-#MISE description="Merge PR with fork defaults: delete branch; 1 commit→squash, else merge-commit"
+#MISE description="Merge PR via REST after required check-runs pass (not gh GraphQL preflight)"
 #USAGE arg "<number>" help="PR number"
 #USAGE flag "--squash" help="Force squash (flatten multi-commit PR)"
 #USAGE flag "--merge-commit" help="Force merge commit (keep multi-commit history on a 1-commit PR)"
+#USAGE flag "--admin" help="Break-glass: allow merge when required checks are not all green (gh --admin)"
 
 set -euo pipefail
 
@@ -14,30 +15,124 @@ n="${usage_number:?PR number required}"
 repo=$(origin_name_with_owner)
 ensure_gh_default_origin
 
+command -v jq >/dev/null 2>&1 || {
+  echo "pr:merge: jq is required" >&2
+  exit 2
+}
+
+# Must match Protect main / Protect sandbox required check *job name*.
+REQUIRED_CHECKS=(
+  "identity + commitlint"
+)
+
 if [[ "${usage_squash:-false}" == "true" && "${usage_merge_commit:-false}" == "true" ]]; then
   echo "pr:merge: pick at most one of --squash / --merge-commit" >&2
   exit 2
 fi
 
+pr_json=$(gh pr view "$n" -R "$repo" --json state,title,commits,baseRefName,headRefName,headRefOid,url)
+state=$(jq -r .state <<<"$pr_json")
+if [[ "$state" != "OPEN" ]]; then
+  echo "pr:merge: PR #$n is $state (not OPEN)" >&2
+  exit 1
+fi
+
+title=$(jq -r .title <<<"$pr_json")
+head_sha=$(jq -r .headRefOid <<<"$pr_json")
+head_ref=$(jq -r .headRefName <<<"$pr_json")
+base_ref=$(jq -r .baseRefName <<<"$pr_json")
+count=$(jq '.commits | length' <<<"$pr_json")
+
 if [[ "${usage_squash:-false}" == "true" ]]; then
   method=squash
 elif [[ "${usage_merge_commit:-false}" == "true" ]]; then
-  method=merge-commit
+  method=merge
 else
-  count=$(gh pr view "$n" -R "$repo" --json commits --jq '.commits | length')
   if [[ "$count" -eq 1 ]]; then
     method=squash
   elif [[ "$count" -gt 1 ]]; then
-    method=merge-commit
+    method=merge
   else
     echo "pr:merge: PR #$n has no commits" >&2
     exit 1
   fi
-  echo "pr:merge: PR #$n (-R $repo) → $count commit(s) → $method (delete-branch)"
 fi
 
-# Always target origin (fork). Bare `gh pr` can resolve to upstream when both remotes exist.
-case "$method" in
-  squash) gh pr merge "$n" -R "$repo" --squash --delete-branch ;;
-  merge-commit) gh pr merge "$n" -R "$repo" --merge --delete-branch ;;
-esac
+echo "pr:merge: PR #$n (-R $repo) → $count commit(s) → ${method} (delete-branch)"
+echo "  base=$base_ref head=$head_ref@$head_sha"
+echo "  ${title}"
+
+# --- Required checks: check-runs only (not classic statuses, not mergeStateStatus) ---
+# --paginate may emit multiple JSON documents; -s slurp then flatten check_runs.
+checks_json=$(
+  gh api "repos/${repo}/commits/${head_sha}/check-runs" --paginate |
+    jq -s '{check_runs: [.[].check_runs // empty] | add // []}'
+)
+
+failing=0
+for ctx in "${REQUIRED_CHECKS[@]}"; do
+  line=$(
+    jq -r --arg name "$ctx" '
+      [.check_runs[] | select(.name == $name)]
+      | sort_by(.completed_at // .started_at // "")
+      | if length == 0 then "missing\tmissing"
+        else (last | "\(.status // "?")\t\(.conclusion // "null")")
+        end
+    ' <<<"$checks_json"
+  )
+  status=${line%%$'\t'*}
+  concl=${line#*$'\t'}
+  if [[ "$concl" == "success" ]]; then
+    echo "  check OK: $ctx (${status}/${concl})"
+  else
+    echo "  check BAD: $ctx (${status}/${concl})" >&2
+    failing=$((failing + 1))
+  fi
+done
+
+if [[ "$failing" -gt 0 ]]; then
+  if [[ "${usage_admin:-false}" != "true" ]]; then
+    echo "pr:merge: refusing merge — $failing required check(s) not success" >&2
+    echo "pr:merge: re-run CI, or pass --admin only as intentional break-glass" >&2
+    exit 1
+  fi
+  echo "pr:merge: WARNING break-glass --admin with $failing non-green required check(s)" >&2
+fi
+
+# --- Merge ---
+# Green checks → REST (avoids gh pr merge GraphQL preflight on BLOCKED; cli/cli#13388).
+# --admin only when checks failed and break-glass was requested.
+if [[ "${usage_admin:-false}" == "true" && "$failing" -gt 0 ]]; then
+  echo "pr:merge: using gh pr merge --admin (ruleset bypass)"
+  case "$method" in
+    squash) gh pr merge "$n" -R "$repo" --squash --delete-branch --admin ;;
+    merge) gh pr merge "$n" -R "$repo" --merge --delete-branch --admin ;;
+  esac
+else
+  commit_title="${title} (#${n})"
+  echo "pr:merge: REST merge (method=${method}, sha=${head_sha})"
+  gh api --method PUT "repos/${repo}/pulls/${n}/merge" \
+    -f merge_method="$method" \
+    -f commit_title="$commit_title" \
+    -f sha="$head_sha" |
+    jq '{merged,sha,message}'
+
+  if [[ -n "$head_ref" && "$head_ref" != "main" && "$head_ref" != "$base_ref" ]]; then
+    if gh api --method DELETE "repos/${repo}/git/refs/heads/${head_ref}" >/dev/null 2>&1; then
+      echo "pr:merge: deleted remote branch ${head_ref}"
+    else
+      echo "pr:merge: remote branch ${head_ref} already gone or not deletable" >&2
+    fi
+  fi
+
+  if git show-ref --verify --quiet "refs/heads/${head_ref}" 2>/dev/null; then
+    current=$(git branch --show-current || true)
+    if [[ "$current" == "$head_ref" ]]; then
+      git checkout "$base_ref" 2>/dev/null || git checkout main 2>/dev/null || true
+    fi
+    git branch -D "$head_ref" 2>/dev/null && echo "pr:merge: deleted local branch ${head_ref}" || true
+  fi
+fi
+
+echo "pr:merge: done — PR #$n"
+echo "  next: mise run main:sync"

@@ -32,18 +32,74 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            range="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          # Always-on decision log (not ACTIONS_STEP_DEBUG).
+          # Re-run with "Enable debug logging" only for runner/action noise.
+
+          event="${GITHUB_EVENT_NAME}"
+          sha="${{ github.sha }}"
+          before=""
+          range=""
+          fallback="none"
+          reason=""
+
+          if [[ "$event" == "pull_request" ]]; then
+            before="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            range="${before}..${head}"
+            reason="pull_request base..head"
           else
             before="${{ github.event.before }}"
             if [[ -z "$before" || "$before" == "0000000000000000000000000000000000000000" ]]; then
-              range="${{ github.sha }}^!"
+              range="${sha}^!"
+              fallback="tip-only"
+              reason="push with empty/zero before (new branch or unknown parent)"
+            elif ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
+              range="${sha}^!"
+              fallback="tip-only"
+              reason="before SHA not present in this clone"
+            elif ! git merge-base --is-ancestor "$before" "$sha" 2>/dev/null; then
+              range="${sha}^!"
+              fallback="tip-only"
+              reason="before is not an ancestor of sha (force-push or history rewrite)"
             else
-              range="${before}..${{ github.sha }}"
+              range="${before}..${sha}"
+              reason="push before..sha"
             fi
           fi
-          echo "range=${range}" >>"${GITHUB_OUTPUT}"
-          echo "Checking range: ${range}"
+
+          {
+            echo "event=${event}"
+            echo "before=${before:-}"
+            echo "sha=${sha}"
+            echo "range=${range}"
+            echo "fallback=${fallback}"
+            echo "reason=${reason}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          if ! git rev-list --count "$range" >/dev/null 2>&1; then
+            echo "::error::invalid git range after resolve: ${range}"
+            exit 2
+          fi
+          count=$(git rev-list --count "$range")
+          echo "commit_count=${count}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          # Extra detail only when re-run with Enable debug logging.
+          if [[ "${ACTIONS_STEP_DEBUG:-}" == "true" || "${RUNNER_DEBUG:-}" == "1" ]]; then
+            echo "::group::debug range context"
+            git rev-parse --verify "$sha^{commit}" || true
+            if [[ -n "${before:-}" && "$before" != "0000000000000000000000000000000000000000" ]]; then
+              git cat-file -t "$before" 2>&1 || echo "before: missing"
+              git merge-base --is-ancestor "$before" "$sha" 2>&1 || echo "before: not ancestor"
+            fi
+            git log --oneline -5 "$sha" || true
+            git rev-list --oneline "$range" || true
+            echo "::endgroup::"
+          fi
+
+          {
+            echo "range=${range}"
+            echo "fallback=${fallback}"
+          } >>"$GITHUB_OUTPUT"
 
       - name: identity:check
         run: ./mise-tasks/identity/check "${{ steps.range.outputs.range }}"

@@ -18,6 +18,8 @@ Fork-local work tracking. Technical only (no secrets, no client/personal data).
 - [x] GitHub ruleset email patterns on default branch (Protect main)
 - [x] Require Policy status + PR path on `main` (Protect main)
 - [x] Restrict direct pushes (`update` + org-admin bypass)
+- [x] Policy range harden: force-push-safe `before` (tip-only fallback + decision log)
+- [x] `pr:merge`: required check-runs gate + REST merge (avoid `gh` BLOCKED preflight; `--admin` break-glass only)
 - [ ] Signed commits: enable `required_signatures` on Protect main **after** SSH signing shows Verified on a real push
   - Prefer SSH signing (not GPG); public key must be a GitHub **signing** key
   - Local: `gpg.format=ssh`, `commit.gpgsign=true`, `user.signingkey`
@@ -114,8 +116,12 @@ Huge inline `run: |` blocks are hard to test locally. Convention (this repo / of
 - [x] CI profile: `mise.ci.toml` + `mise-tasks-ci/ci/*` runner tasks
 - [x] Operator `ci:dispatch` / `ci:watch` stay under `mise-tasks/ci/`
 - [x] Wire `jdx/mise-action` + `MISE_ENV=ci` in PR + release workflows
-- [ ] `workflows:lint` + shellcheck clean on new scripts
-- [ ] Local smoke: `mise -E ci run ci:check-pager` (long first time)
+- [x] `workflows:lint` (actionlint) on workflow changes; shellcheck clean enough on new scripts
+- [ ] Local smoke: `mise -E ci run ci:check-pager` (long first time; optional)
+
+### Phase E notes (partial)
+
+- [x] Release **dispatch-only** + `package` input / `ci:dispatch --no-package` (compile-only path exists)
 
 ### Phase C — Caches that actually hit
 
@@ -135,9 +141,9 @@ Huge inline `run: |` blocks are hard to test locally. Convention (this repo / of
 
 ### Phase E — Faster release binary (macOS only when needed)
 
-- [ ] Keep release **dispatch-only** (no PR `--release`)
-- [ ] Job split: **build** (macOS) → **package** (macOS smoke *or* later Linux-only tar if smoke optional)
-- [ ] Skip package job when `publish=false` and input `package=false` (faster compile-only dispatch)
+- [x] Keep release **dispatch-only** (no PR `--release`)
+- [x] Job split: **build** (macOS) → **package** (optional) → **publish** (optional)
+- [x] Skip package when `package=false` / `ci:dispatch --no-package`
 - [ ] Revisit `fetch-depth: 0` — only when `source_ref` is a non-tip SHA; branch tips can use depth 1
 - [ ] Cache warm-up workflow (manual) that only builds deps for `pager-bin` on macos-26 / ubuntu
 - [ ] Do **not** matrix macOS × many crates on free tier (5 macOS cap)
@@ -175,7 +181,7 @@ Huge inline `run: |` blocks are hard to test locally. Convention (this repo / of
 
 - [ ] Shared Actions cache (deps + target); document hit rates
 - [ ] Affected-crate mapping for PR
-- [ ] Release compile-only mode (skip package)
+- [x] Release compile-only mode (skip package) — `package` input / `ci:dispatch --no-package`
 - [ ] Shallow fetch when building branch tips
 
 ### Upstream sync (automation)
@@ -217,10 +223,31 @@ Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 - [x] Merge method default + archive/** retention
 - [x] Local tooling (mise/direnv/lefthook) documented in `AGENTS.md`
 - [x] `main` protection + signed-commits plan (public, vendor-neutral)
-- [ ] Document CI lanes (policy / PR rust / release) in `AGENTS.md`
+- [x] Document CI lanes (policy / PR rust / release) in `AGENTS.md`
 - [ ] Keep this ledger current
 
 ## Upstream
 
 - [ ] Periodic sync from `upstream` (manual FF when possible; else sync PR + CI — see `AGENTS.md`)
 - [ ] Automate that path — see [Upstream sync (automation)](#upstream-sync-automation)
+
+---
+
+## Open backlog (technical)
+
+Items still open. Completed Policy range + `pr:merge` REST gate live on this PR branch (merge to `main` pending).
+
+| Area | Open work | Constraint / note |
+|:--|:--|:--|
+| **Protect main** | Optionally require check context `cargo check pager-bin` | Only after cold/warm timings are acceptable; keep Policy as the hard gate until then |
+| **PR CI** | Wire `ci:clippy-pager` (and optional small-crate tests) into [`.github/workflows/pr.yml`](.github/workflows/pr.yml) | Task exists under `mise-tasks-ci/`; not in the workflow matrix yet |
+| **Cache** | Document Actions deps/target hit rates; tune keys | Phase C |
+| **Incremental** | Path → crate map for affected `cargo check -p …` | Phase D; fallback remains full pager-bin check |
+| **Release** | Shallow `fetch-depth` for branch tips; optional warm-up workflow | Phase E remainder; `package=false` path already exists |
+| **YAML** | Further shrink residual inline steps in release workflow | Staging/publish notes still in YAML |
+| **Lab** | Keep `sandbox/merge-lab` + ruleset **Protect sandbox/merge-lab** for merge/CI experiments | Not a production branch; not `main` |
+| **Upstream** | Scheduled/manual sync workflow → open sync PR only | Never auto-merge; confirm `SOURCE_REV` after merge |
+| **Product** | Remote tool daemon MVP (RPC, loopback tests, bootstrap without secrets) | Prefer existing tool-protocol/runtime crates |
+| **Signing** | SSH commit signing → GitHub Verified → then `required_signatures` on Protect main | Operator machine config stays out of this tree |
+| **Repo topology** | Detach public fork → non-fork remote (deferred) | Cosmetic/parent-default issue; does not fix `gh pr merge` preflight |
+| **Upstream CLI** | Track [cli/cli#13388](https://github.com/cli/cli/issues/13388) | Local workaround: check-runs gate + REST merge; `--admin` break-glass only |
