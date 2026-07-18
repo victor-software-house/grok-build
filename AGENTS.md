@@ -63,14 +63,35 @@ Leaving a dirty `main` or an unpushed branch is a **process failure**.
 
 ## Git
 
+### `main` protection
+
+Default branch is **PR-only** (ruleset **Protect main**).
+
+- No direct pushes except org-admin bypass
+- Required check: `identity + commitlint` ([`policy.yml`](.github/workflows/policy.yml))
+- Author/committer emails must match allowlist patterns (ruleset + CI)
+- Keep the Policy job `name:` stable — the ruleset binds that exact check context
+
 ### Identity
 
 Author and committer emails must match [`config/commit-email-allowlist`](config/commit-email-allowlist).
 
 | Where | How |
 |:--|:--|
-| **CI (authoritative)** | [`.github/workflows/policy.yml`](.github/workflows/policy.yml) |
+| **CI** | [`.github/workflows/policy.yml`](.github/workflows/policy.yml) |
+| **Ruleset** | email pattern rules on `main` (must stay aligned with the allowlist) |
 | Local (ad-hoc) | [`mise run identity:check`](mise-tasks/identity/check) |
+
+### Signed commits (planned)
+
+GitHub **Verified** signatures are planned for `main` (`required_signatures`).
+
+- Prefer **SSH commit signing** (not GPG)
+- Register the public key as a **signing** key on GitHub (auth keys alone are not enough)
+- Enable signing in local git config (`gpg.format=ssh`, `commit.gpgsign=true`, `user.signingkey`)
+- Do not enable the ruleset until a push shows **Verified** on github.com
+
+Operator machine details live **outside this repo** (private notes / agent memory).
 
 ### Remotes and history
 
@@ -81,6 +102,21 @@ Author and committer emails must match [`config/commit-email-allowlist`](config/
 
 - `archive/**` is permanent on `origin` — never delete or force-push those branches
 - Do not rewrite published history unless the operator asks and branch rules allow it
+
+### `gh` default repo (forks)
+
+When `upstream` exists, bare `gh pr` / `gh run` often targets the **parent** (`xai-org/…`), where PRs may be disabled.
+
+That choice is **local** (`.git/config`); it cannot be committed into the tree.
+
+After clone (or any time it drifts):
+
+```sh
+gh repo set-default origin
+```
+
+Also automatic via [`mise run worktree:setup`](mise-tasks/worktree/setup) (post-checkout).\
+Mise tasks that call `gh` pass `-R` for **origin** so they stay correct even if the default is wrong.
 
 ### Upstream sync
 

@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-#MISE description="Install tools + lefthook (no-op on primary checkout for post-checkout)"
+#MISE description="Pin gh to origin; on linked worktrees also mise install + lefthook"
 
 set -euo pipefail
 
+root=$(git rev-parse --show-toplevel)
+# shellcheck source=../_lib/gh-origin.sh
+source "${root}/mise-tasks/_lib/gh-origin.sh"
+
+# Always: gh CLI must talk to the fork (origin), not upstream parent.
+ensure_gh_default_origin
+
 # Linked worktrees have .git as a file; primary checkout is a directory.
-# post-checkout should not reinstall hooks on every branch switch in the main tree.
+# Skip heavy install on ordinary branch switches in the main tree.
 if [[ -d .git ]] && [[ "${MISE_WORKTREE_FORCE:-}" != "1" ]]; then
   exit 0
 fi

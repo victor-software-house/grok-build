@@ -5,14 +5,23 @@ Fork-local work tracking. Technical only (no secrets, no client/personal data).
 
 ## Repo policy / branch protection
 
-Current live rulesets (2026-07-17): org **Block force pushes** on `~DEFAULT_BRANCH` (`non_fast_forward`); repo **Protect archive branches** on `archive/**` (`deletion` + `non_fast_forward`). No main PR gate, no identity patterns, no required signatures yet. API probe: `commit_author_email_pattern`, `committer_email_pattern`, `required_signatures`, `pull_request`, `update` all accepted on this repo.
+**Live rulesets (2026-07-17):**
+
+| Ruleset | Scope | Rules |
+|:--|:--|:--|
+| Block force pushes (org) | `~DEFAULT_BRANCH` | `non_fast_forward` |
+| Protect archive branches | `archive/**` | `deletion`, `non_fast_forward` |
+| **Protect main** | `~DEFAULT_BRANCH` | `update`, `pull_request` (0 reviews), `required_status_checks` (`identity + commitlint`), author/committer email regexes; bypass: OrganizationAdmin |
 
 - [x] Document and pin **whitelisted git identities** — [`config/commit-email-allowlist`](config/commit-email-allowlist)
-- [x] CI guard on PRs/push — [`.github/workflows/policy.yml`](.github/workflows/policy.yml) runs `identity:check` + `commitlint:range` (authoritative; local ad-hoc only)
-- [ ] GitHub ruleset: reject pushes whose commit author/committer is outside the whitelist (email-pattern rules on `main` / default)
-- [ ] Block **merging PRs** that contain any commit outside the whitelist (require `Policy` status + optional ruleset patterns)
-- [ ] Restrict direct pushes to protected refs (`update` / PR-required + bypass list for org admins)
-- [ ] Optional: require verified signed commits on protected branches (`required_signatures`)
+- [x] CI guard on PRs/push — [`.github/workflows/policy.yml`](.github/workflows/policy.yml)
+- [x] GitHub ruleset email patterns on default branch (Protect main)
+- [x] Require Policy status + PR path on `main` (Protect main)
+- [x] Restrict direct pushes (`update` + org-admin bypass)
+- [ ] Signed commits: enable `required_signatures` on Protect main **after** SSH signing shows Verified on a real push
+  - Prefer SSH signing (not GPG); public key must be a GitHub **signing** key
+  - Local: `gpg.format=ssh`, `commit.gpgsign=true`, `user.signingkey`
+  - Operator-specific setup: **private notes / agent memory only** (not this tree)
 
 ## CI / builds
 
@@ -44,6 +53,7 @@ Current live rulesets (2026-07-17): org **Block force pushes** on `~DEFAULT_BRAN
 - [x] Explicit operator approval before merge
 - [x] Merge method default + archive/** retention
 - [x] Local tooling (mise/direnv/lefthook) documented in `AGENTS.md`
+- [x] `main` protection + signed-commits plan (public, vendor-neutral)
 - [ ] Keep this ledger current
 
 ## Upstream

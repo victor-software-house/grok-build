@@ -4,8 +4,15 @@
 
 set -euo pipefail
 
+root=$(git rev-parse --show-toplevel)
+# shellcheck source=../_lib/gh-origin.sh
+source "${root}/mise-tasks/_lib/gh-origin.sh"
+
+repo=$(origin_name_with_owner)
+ensure_gh_default_origin
+
 if [[ -n "${usage_run_id:-}" ]]; then
-  gh run watch "$usage_run_id"
+  gh run watch -R "$repo" "$usage_run_id"
 else
-  gh run watch
+  gh run watch -R "$repo"
 fi
