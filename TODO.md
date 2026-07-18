@@ -186,15 +186,13 @@ Huge inline `run: |` blocks are hard to test locally. Convention (this repo / of
 
 ### Upstream sync (automation)
 
-Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
+Documented in [`AGENTS.md`](AGENTS.md). Implementation:
 
-- [ ] Scheduled (or manual-dispatch) workflow that fetches `upstream/main`, opens a **sync PR** into `main` when behind
-  - Prefer fast-forward branch when history allows; otherwise merge/rebase branch + PR (never force-push `main`)
-  - Use `pull_request` path so Policy + PR rust run
-  - Label / title convention e.g. `chore(sync): upstream main @ <short-sha>`
-  - Do not auto-merge without operator approval
-- [ ] After merge: confirm [`SOURCE_REV`](SOURCE_REV) still matches the public export’s provenance note
-- [ ] Optional: notify operator (issue comment only — no secrets/webhooks required for MVP)
+- [x] `mise run upstream:status` — diagnostic (tips, open sync PRs, conflict warnings)
+- [x] `mise run upstream:sync` — per-tip PRs; laptop dry-run default; `--apply` or CI writes
+- [x] GHA [upstream-sync.yml](.github/workflows/upstream-sync.yml): every **6h** + `workflow_dispatch` → same task
+- [x] PR policy: one PR per tip; max latest **clean** + latest **dirty**; clean closes all; dirty replaces dirty; conflict markers committed; never auto-merge
+- [ ] After operator merge: confirm [`SOURCE_REV`](SOURCE_REV) still matches the public export’s provenance note
 
 ---
 
@@ -228,8 +226,8 @@ Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 
 ## Upstream
 
-- [ ] Periodic sync from `upstream` (manual FF when possible; else sync PR + CI — see `AGENTS.md`)
-- [ ] Automate that path — see [Upstream sync (automation)](#upstream-sync-automation)
+- [x] Automate sync path — see [Upstream sync (automation)](#upstream-sync-automation)
+- [ ] Operator merges sync PRs after thorough review (especially `sync:conflict`)
 
 ---
 
@@ -246,7 +244,7 @@ Items still open. Completed Policy range + `pr:merge` REST gate live on this PR 
 | **Release** | Shallow `fetch-depth` for branch tips; optional warm-up workflow | Phase E remainder; `package=false` path already exists |
 | **YAML** | Further shrink residual inline steps in release workflow | Staging/publish notes still in YAML |
 | **Lab** | Keep `sandbox/merge-lab` + ruleset **Protect sandbox/merge-lab** for merge/CI experiments | Not a production branch; not `main` |
-| **Upstream** | Scheduled/manual sync workflow → open sync PR only | Never auto-merge; confirm `SOURCE_REV` after merge |
+| **Upstream** | Operator review/merge of sync PRs; optional post-merge `SOURCE_REV` check | Automation: `upstream:status` / `upstream:sync` + 6h workflow; never auto-merge |
 | **Product** | Remote tool daemon MVP (RPC, loopback tests, bootstrap without secrets) | Prefer existing tool-protocol/runtime crates |
 | **Signing** | SSH commit signing → GitHub Verified → then `required_signatures` on Protect main | Operator machine config stays out of this tree |
 | **Repo topology** | Detach public fork → non-fork remote (deferred) | Cosmetic/parent-default issue; does not fix `gh pr merge` preflight |

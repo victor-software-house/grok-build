@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+#MISE description="Sync upstream/main into origin via per-tip PRs (default dry-run; --apply or CI writes)"
+#USAGE flag "--apply" help="Push branches and open/close PRs (default: dry-run on laptop)"
+#USAGE flag "--dry-run" help="Force dry-run even when CI=true"
+
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+# shellcheck source=../_lib/gh-origin.sh
+source "${root}/mise-tasks/_lib/gh-origin.sh"
+# shellcheck source=./_lib.sh
+source "${root}/mise-tasks/upstream/_lib.sh"
+
+repo=$(origin_name_with_owner)
+ensure_gh_default_origin
+
+command -v jq >/dev/null 2>&1 || {
+  echo "upstream:sync: jq is required" >&2
+  exit 2
+}
+
+export FORCE_APPLY=false
+export FORCE_DRY_RUN=false
+if [[ "${usage_apply:-false}" == "true" ]]; then
+  FORCE_APPLY=true
+fi
+if [[ "${usage_dry_run:-false}" == "true" ]]; then
+  FORCE_DRY_RUN=true
+fi
+
+if should_apply; then
+  mode=apply
+else
+  mode=dry-run
+fi
+
+echo "upstream:sync mode=${mode} repo=${repo}"
+
+fetch_origin_upstream_main
+
+base=$(origin_main_sha)
+up=$(upstream_main_sha)
+short=$(upstream_short "$up")
+branch=$(upstream_branch_for "$up")
+
+echo "  origin/main:   ${base}"
+echo "  upstream/main: ${up} (${short})"
+echo "  branch:        ${branch}"
+
+if is_ancestor "$up" "$base"; then
+  echo "  already integrated — would close all open sync PRs"
+  if [[ "$mode" == "apply" ]]; then
+    ensure_sync_labels "$repo"
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      num=${line%%|*}
+      echo "  closing #${num} (upstream already on main)"
+      close_pr_with_comment "$repo" "$num" \
+        "Closed by upstream:sync: \`upstream/main\` (\`${short}\`) is already contained in \`main\`."
+    done < <(list_open_sync_prs "$repo" || true)
+  fi
+  echo "  done"
+  exit 0
+fi
+
+# --- Build merge for current upstream tip ---
+trap cleanup_build_worktree EXIT
+build_sync_merge "$base" "$up"
+tip_clean=$BUILD_CLEAN
+tip_head=$BUILD_HEAD
+tip_branch=$BUILD_BRANCH
+echo "  tip merge: clean=${tip_clean} head=${tip_head}"
+
+if [[ "$mode" != "apply" ]]; then
+  echo "  dry-run plan:"
+  echo "    - push ${tip_branch} @ ${tip_head} (force-with-lease if exists)"
+  if [[ "$tip_clean" == "true" ]]; then
+    echo "    - ensure clean PR for this tip; close all other open sync PRs"
+  else
+    echo "    - ensure dirty PR for this tip (conflict markers committed)"
+    echo "    - close other dirty sync PRs; keep/rebuild latest clean slot"
+  fi
+  # Summarize current open PRs
+  echo "  currently open:"
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    echo "    ${line}"
+  done < <(list_open_sync_prs "$repo" || true)
+  echo "  re-run with: mise run upstream:sync -- --apply"
+  exit 0
+fi
+
+# --- Apply ---
+ensure_sync_labels "$repo"
+
+push_sync_branch "$tip_branch" "$tip_head"
+tip_pr=$(ensure_pr_for_branch "$repo" "$tip_branch" "$base" "$up" "$tip_clean")
+echo "  tip PR: #${tip_pr:-?} (${tip_branch})"
+
+cleanup_build_worktree
+trap - EXIT
+
+close_others_except() {
+  # $1 = keep number; $2 = optional filter: all|dirty|clean
+  local keep=$1
+  local filter=${2:-all}
+  local line num head labels
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    num=${line%%|*}
+    rest=${line#*|}
+    head=${rest%%|*}
+    rest2=${rest#*|}
+    labels=${rest2#*|}
+    [[ "$num" == "$keep" ]] && continue
+
+    case "$filter" in
+      dirty)
+        pr_has_label "$labels" "$UPSTREAM_SYNC_LABEL_CONFLICT" || continue
+        ;;
+      clean)
+        pr_has_label "$labels" "$UPSTREAM_SYNC_LABEL_CLEAN" || continue
+        ;;
+      all) ;;
+    esac
+
+    echo "  closing #${num} (${head}) filter=${filter}"
+    close_pr_with_comment "$repo" "$num" \
+      "Closed by upstream:sync: superseded by #${keep} (\`upstream/main\` @ \`${short}\`, clean=${tip_clean})."
+  done < <(list_open_sync_prs "$repo" || true)
+}
+
+if [[ "$tip_clean" == "true" ]]; then
+  close_others_except "${tip_pr}" all
+else
+  # Dirty tip: replace other dirties only; refresh/keep clean slot.
+  close_others_except "${tip_pr}" dirty
+
+  # Rebuild any remaining clean-labeled PRs onto current main.
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    num=${line%%|*}
+    rest=${line#*|}
+    head=${rest%%|*}
+    rest2=${rest#*|}
+    labels=${rest2#*|}
+    [[ "$num" == "${tip_pr}" ]] && continue
+    pr_has_label "$labels" "$UPSTREAM_SYNC_LABEL_CLEAN" || continue
+
+    other_tip=$(resolve_tip_from_branch "$head" || true)
+    if [[ -z "${other_tip:-}" ]]; then
+      echo "  warn: cannot resolve tip for ${head}; closing #${num}"
+      close_pr_with_comment "$repo" "$num" \
+        "Closed by upstream:sync: could not resolve upstream tip from branch name \`${head}\`."
+      continue
+    fi
+
+    trap cleanup_build_worktree EXIT
+    build_sync_merge "$base" "$other_tip"
+    other_clean=$BUILD_CLEAN
+    other_head=$BUILD_HEAD
+    other_branch=$BUILD_BRANCH
+
+    if [[ "$other_clean" != "true" ]]; then
+      echo "  clean slot #${num} no longer clean on current main — closing"
+      close_pr_with_comment "$repo" "$num" \
+        "Closed by upstream:sync: former clean tip is no longer conflict-free on current \`main\`."
+      cleanup_build_worktree
+      trap - EXIT
+      continue
+    fi
+
+    push_sync_branch "$other_branch" "$other_head"
+    ensure_pr_for_branch "$repo" "$other_branch" "$base" "$other_tip" true >/dev/null
+    echo "  refreshed clean slot #${num} (${other_branch})"
+    cleanup_build_worktree
+    trap - EXIT
+  done < <(list_open_sync_prs "$repo" || true)
+
+  # Cap: if multiple cleans remain, keep newest by PR number (proxy for recency), close rest.
+  cleans=()
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    num=${line%%|*}
+    rest=${line#*|}
+    rest2=${rest#*|}
+    labels=${rest2#*|}
+    [[ "$num" == "${tip_pr}" ]] && continue
+    pr_has_label "$labels" "$UPSTREAM_SYNC_LABEL_CLEAN" || continue
+    cleans+=("$num")
+  done < <(list_open_sync_prs "$repo" || true)
+
+  if [[ ${#cleans[@]} -gt 1 ]]; then
+    # Sort numeric descending; keep highest PR number.
+    mapfile -t sorted < <(printf '%s\n' "${cleans[@]}" | sort -nr)
+    keep_clean=${sorted[0]}
+    for num in "${sorted[@]:1}"; do
+      echo "  closing extra clean #${num} (keeping #${keep_clean})"
+      close_pr_with_comment "$repo" "$num" \
+        "Closed by upstream:sync: only one clean slot allowed; kept #${keep_clean}."
+    done
+  fi
+fi
+
+echo "  done — review open sync PRs; never auto-merge"
+echo "  diagnostic: mise run upstream:status"

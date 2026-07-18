@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+#MISE description="Diagnostic: upstream vs origin/main, open sync PRs, conflict warnings (read-only)"
+#MISE alias="upstream-status"
+
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+# shellcheck source=../_lib/gh-origin.sh
+source "${root}/mise-tasks/_lib/gh-origin.sh"
+# shellcheck source=./_lib.sh
+source "${root}/mise-tasks/upstream/_lib.sh"
+
+repo=$(origin_name_with_owner)
+ensure_gh_default_origin
+
+command -v jq >/dev/null 2>&1 || {
+  echo "upstream:status: jq is required" >&2
+  exit 2
+}
+
+fetch_origin_upstream_main
+
+base=$(origin_main_sha)
+up=$(upstream_main_sha)
+short=$(upstream_short "$up")
+base_sr=$(source_rev_at "$base")
+up_sr=$(source_rev_at "$up")
+
+echo "upstream:status"
+echo "  origin:   ${repo}"
+echo "  origin/main:    ${base}"
+echo "  upstream/main:  ${up} (${short})"
+echo "  SOURCE_REV base: ${base_sr:-?}"
+echo "  SOURCE_REV tip:  ${up_sr:-?}"
+
+if is_ancestor "$up" "$base"; then
+  echo "  state: already integrated (upstream/main ⊆ origin/main)"
+else
+  behind=$(git rev-list --count "${base}..${up}")
+  ahead=$(git rev-list --count "${up}..${base}")
+  echo "  divergence: origin ahead=${ahead} behind=${behind} (vs upstream tip)"
+  echo "  upstream-only:"
+  git log --oneline "${base}..${up}" | sed 's/^/    /' | head -20
+fi
+
+echo "  open sync PRs (label ${UPSTREAM_SYNC_LABEL}):"
+open_count=0
+dirty_count=0
+clean_count=0
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  open_count=$((open_count + 1))
+  num=${line%%|*}
+  rest=${line#*|}
+  head=${rest%%|*}
+  rest2=${rest#*|}
+  url=${rest2%%|*}
+  labels=${rest2#*|}
+  kind="?"
+  if pr_has_label "$labels" "$UPSTREAM_SYNC_LABEL_CONFLICT"; then
+    kind="DIRTY"
+    dirty_count=$((dirty_count + 1))
+  elif pr_has_label "$labels" "$UPSTREAM_SYNC_LABEL_CLEAN"; then
+    kind="clean"
+    clean_count=$((clean_count + 1))
+  fi
+  echo "    #${num} [${kind}] ${head}"
+  echo "         ${url}"
+done < <(list_open_sync_prs "$repo" || true)
+
+if [[ "$open_count" -eq 0 ]]; then
+  echo "    (none)"
+fi
+
+if [[ "$dirty_count" -gt 0 ]]; then
+  echo
+  echo "  WARNING: ${dirty_count} conflicted sync PR(s) open."
+  echo "  Thorough review required before merge — conflict markers are intentional."
+  echo "  Merge only via mise run pr:merge after resolving/reviewing."
+fi
+
+if [[ "$open_count" -gt 2 ]]; then
+  echo
+  echo "  WARNING: ${open_count} open sync PRs (policy cap is 2). Run: mise run upstream:sync -- --apply"
+fi
+
+if ! is_ancestor "$up" "$base"; then
+  # Probe merge cleanliness without writing.
+  if git merge-tree --write-tree "$base" "$up" >/dev/null 2>&1; then
+    echo "  probe: merge of upstream/main onto origin/main is CLEAN"
+  else
+    echo "  probe: merge of upstream/main onto origin/main has CONFLICTS"
+    echo "         (open a dirty PR via: mise run upstream:sync -- --apply)"
+  fi
+fi
+
+echo "  next: mise run upstream:sync            # dry-run plan"
+echo "        mise run upstream:sync -- --apply # push/open/close PRs"
+echo "        (CI / GITHUB_ACTIONS applies automatically)"

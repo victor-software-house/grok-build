@@ -121,15 +121,30 @@ Mise tasks that call `gh` pass `-R` for **origin** so they stay correct even if 
 
 ### Upstream sync
 
-Fast-forward `main` when you can.\
-Otherwise open a sync branch, PR, and let CI run.
+Automation keeps fork `main` current with [`xai-org/grok-build`](https://github.com/xai-org/grok-build) via **review-gated PRs** (never auto-merge).
 
-After a sync, confirm [`SOURCE_REV`](SOURCE_REV) matches the intended upstream snapshot.
+| | |
+|:--|:--|
+| Diagnostic | [`mise run upstream:status`](mise-tasks/upstream/status) |
+| Plan / apply | [`mise run upstream:sync`](mise-tasks/upstream/sync) (laptop **dry-run** by default; `--apply` to write) |
+| Scheduled | [`.github/workflows/upstream-sync.yml`](.github/workflows/upstream-sync.yml) every **6h** UTC + `workflow_dispatch` — runs the same task with `CI=true` (applies) |
+
+**PR policy**
+
+- One PR per upstream tip: branch `sync/upstream-<12-hex>` + label `sync:upstream` (`sync:clean` / `sync:conflict`)
+- At most **two** open sync PRs: latest **clean** + latest **dirty**
+- New **clean** tip closes all other sync PRs; new **dirty** replaces only the previous dirty
+- Conflicts are **committed with markers** so the diff is reviewable — **thorough review required** before merge
+- Same tip after `main` moves: force-with-lease the same branch (same PR)
+- Merge only after review: [`mise run pr:merge -- <N>`](mise-tasks/pr/merge), then [`mise run main:sync`](mise-tasks/main/sync)
+
+After merge, confirm [`SOURCE_REV`](SOURCE_REV) matches the intended upstream snapshot.
 
 Do not invent a parallel history of the upstream tree.\
 Do not force-push `main` unless the operator allows it and org rules permit it.
 
 ```sh
+mise run upstream:status
 git fetch upstream origin
 git log --oneline origin/main..upstream/main
 ```
@@ -187,6 +202,8 @@ Release input `source_ref` = branch/tag/SHA; `ci:dispatch --ref` sets it; `--wor
 | [`identity:check`](mise-tasks/identity/check) | Check author/committer emails against the allowlist |
 | [`pr:merge -- <N>`](mise-tasks/pr/merge) | Check-gated REST merge (`--squash` / `--merge-commit` / break-glass `--admin`) |
 | [`main:sync`](mise-tasks/main/sync) | After merge: update `main` and drop locals whose remote is gone |
+| [`upstream:status`](mise-tasks/upstream/status) | Read-only: origin vs upstream tips, open sync PRs, conflict warnings |
+| [`upstream:sync`](mise-tasks/upstream/sync) | Open/update/close upstream sync PRs (dry-run default; `--apply` or CI writes) |
 | [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Ship lane: `--ref`, `--workflow-ref`, `--no-package`, `--publish`, `--version`, `--watch` |
 | `workflows:lint` | Lint workflows with actionlint |
 | `hooks:install` / [`worktree:setup`](mise-tasks/worktree/setup) | Install lefthook; set up a linked worktree |

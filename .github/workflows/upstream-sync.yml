@@ -1,0 +1,58 @@
+# Periodically open/update upstream monorepo sync PRs (never merge).
+# Logic lives in mise-tasks/upstream/* — this workflow only invokes it.
+
+name: Upstream sync
+
+on:
+  schedule:
+    # 00:00, 06:00, 12:00, 18:00 UTC
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: upstream:sync
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # Apply writes (push / open / close PRs). Local default remains dry-run.
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: mise
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          install: true
+          cache: true
+
+      - name: Configure git identity (allowlisted bot)
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+      - name: Ensure origin remote + fetch
+        run: |
+          set -euo pipefail
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch origin main
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream https://github.com/xai-org/grok-build.git
+          git fetch upstream main
+
+      - name: mise run upstream:sync
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise run upstream:sync
