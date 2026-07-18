@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Package the release binary + run install-github-release.sh against a local HTTP server.
-# Expects: SOURCE_SHA, RELEASE_VERSION, CARGO_TARGET_DIR (or raw binary already staged).
+#MISE description="Ship lane: tar release binary + e2e install-github-release.sh (macOS arm64)"
+#MISE dir="{{ config_root }}"
+#
+# Expects env: SOURCE_SHA, RELEASE_VERSION
+# Expects staged raw binary under $RUNNER_TEMP/raw/ or CARGO_TARGET_DIR/release/.
+
 set -euo pipefail
 
 if [[ "$(uname -s)" != Darwin ]] || [[ "$(uname -m)" != arm64 ]]; then
@@ -23,7 +27,7 @@ release_root="$tmp/release"
 package_root_parent="$tmp/package"
 
 if [[ ! -x "$raw/xai-grok-pager" ]]; then
-  artifact="${CARGO_TARGET_DIR:?CARGO_TARGET_DIR or $tmp/raw/xai-grok-pager}/release/xai-grok-pager"
+  artifact="${CARGO_TARGET_DIR:?need CARGO_TARGET_DIR or $tmp/raw/xai-grok-pager}/release/xai-grok-pager"
   mkdir -p "$raw"
   test -x "$artifact"
   cp "$artifact" "$raw/xai-grok-pager"

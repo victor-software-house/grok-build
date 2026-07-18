@@ -149,7 +149,7 @@ Use **GitHub-hosted free-tier runners** instead.
 
 **Lanes:** Policy (every PR) · PR rust (Linux check) · Release (macOS, rare).\
 Do **not** use the macOS release workflow to “see if it compiles” — that burns the 5-wide macOS concurrency pool for nothing.\
-CI task bodies live under [`mise.ci.toml`](mise.ci.toml) + [`mise-tasks/ci/`](mise-tasks/ci/) (`MISE_ENV=ci`).\
+CI work is **file tasks** under [`mise-tasks/ci/`](mise-tasks/ci/) (`ci:check-pager`, `ci:release-pager`, …) — executable scripts with `#MISE` headers, not fat TOML `run` blocks.\
 Release input `source_ref` = branch/tag/SHA; `ci:dispatch --ref` sets it; `--workflow-ref` is only which branch hosts the YAML; `--no-package` skips installer smoke; `--watch` tails the run.
 
 ---

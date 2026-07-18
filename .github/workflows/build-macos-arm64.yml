@@ -39,7 +39,6 @@ concurrency:
 
 env:
   RELEASE_VERSION: ${{ inputs.version }}
-  MISE_ENV: ci
 
 jobs:
   build:
@@ -97,7 +96,7 @@ jobs:
             macos-26-arm64-rust-1.92.0-target-
 
       - name: Tools + release build
-        run: mise run -E ci ci:release-pager
+        run: mise run ci:release-pager
 
       - name: Stage raw binary artifact
         run: |
@@ -167,7 +166,6 @@ jobs:
     timeout-minutes: 20
     env:
       SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
-      MISE_ENV: ci
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -189,7 +187,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          mise run -E ci ci:package-smoke
+          mise run ci:package-smoke
 
       - name: Upload release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

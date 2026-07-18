@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Pin-download protoc (all CI OS) and ripgrep (macOS release bundle env).
-# Safe to `source` from other CI tasks so PROTOC lands in the same shell.
+#MISE description="Install pinned protoc (+ ripgrep on macOS) into RUNNER_TEMP/tools and export PROTOC"
+#MISE dir="{{ config_root }}"
+#
+# File task: mise-tasks/ci/tools → ci:tools
+# Other CI tasks that need PROTOC should `source` this file (same shell), not `depends`
+# (task env does not flow to dependents).
+
 set -euo pipefail
 
 tools="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/grok-ci-tools"
@@ -23,8 +28,8 @@ case "$os-$arch" in
     protoc_sha=6427349140e01f06e049e707a58709a4f221ae73ab9a0425bc4a00c8d0e1ab32
     ;;
   *)
-    printf 'ci:tools: unsupported platform %s-%s (install protoc yourself)\n' "$os" "$arch" >&2
-    return 1 2>/dev/null || exit 1
+    printf 'ci:tools: unsupported platform %s-%s\n' "$os" "$arch" >&2
+    exit 1
     ;;
 esac
 
@@ -34,7 +39,7 @@ if [[ ! -x "$tools/protoc/bin/protoc" ]]; then
   actual=$(shasum -a 256 "$protoc_zip" | awk '{print $1}')
   if [[ "$actual" != "$protoc_sha" ]]; then
     printf 'ci:tools: protoc sha mismatch\n  want %s\n  got  %s\n' "$protoc_sha" "$actual" >&2
-    return 1 2>/dev/null || exit 1
+    exit 1
   fi
   rm -rf "$tools/protoc"
   unzip -q "$protoc_zip" -d "$tools/protoc"
@@ -53,7 +58,7 @@ if [[ "$os" == Darwin ]]; then
     actual=$(shasum -a 256 "$rg_archive" | awk '{print $1}')
     if [[ "$actual" != "$rg_sha" ]]; then
       printf 'ci:tools: ripgrep sha mismatch\n  want %s\n  got  %s\n' "$rg_sha" "$actual" >&2
-      return 1 2>/dev/null || exit 1
+      exit 1
     fi
     tar -xzf "$rg_archive" -C "$tools"
   fi

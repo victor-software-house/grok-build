@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="PR lane: cargo check -p xai-grok-pager-bin (not release; Linux-friendly)"
+#MISE dir="{{ config_root }}"
+#
+# File task → ci:check-pager. Sources ci/tools in-process so PROTOC is set
+# (mise depends does not pass env to dependents).
+
+set -euo pipefail
+
+# shellcheck source=tools
+source "$(dirname "$0")/tools"
+cargo check --locked -p xai-grok-pager-bin
