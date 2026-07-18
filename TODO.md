@@ -25,7 +25,7 @@ Fork-local work tracking. Technical only (no secrets, no client/personal data).
 
 ## CI / builds
 
-- [x] macOS release workflow builds **this repo’s dispatch ref** (`github.sha`) — not an upstream pin
+- [x] macOS release workflow builds **this repo** at a chosen `source_ref` (branch / tag / SHA) — not an upstream pin
 - [ ] PR builds on standard GitHub-hosted runners (check/clippy scoped or light matrix) so work does not depend on local monorepo compiles
 - [ ] Shared Actions cache across branches/PRs (deps + target; document what actually hits)
 - [ ] Stay on free GitHub-hosted runner SKUs (no large/self-hosted unless approved)
