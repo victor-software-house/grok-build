@@ -6,7 +6,13 @@
 
 set -euo pipefail
 
+root=$(git rev-parse --show-toplevel)
+# shellcheck source=../_lib/gh-origin.sh
+source "${root}/mise-tasks/_lib/gh-origin.sh"
+
 n="${usage_number:?PR number required}"
+repo=$(origin_name_with_owner)
+ensure_gh_default_origin
 
 if [[ "${usage_squash:-false}" == "true" && "${usage_merge_commit:-false}" == "true" ]]; then
   echo "pr:merge: pick at most one of --squash / --merge-commit" >&2
@@ -18,7 +24,7 @@ if [[ "${usage_squash:-false}" == "true" ]]; then
 elif [[ "${usage_merge_commit:-false}" == "true" ]]; then
   method=merge-commit
 else
-  count=$(gh pr view "$n" --json commits --jq '.commits | length')
+  count=$(gh pr view "$n" -R "$repo" --json commits --jq '.commits | length')
   if [[ "$count" -eq 1 ]]; then
     method=squash
   elif [[ "$count" -gt 1 ]]; then
@@ -27,11 +33,11 @@ else
     echo "pr:merge: PR #$n has no commits" >&2
     exit 1
   fi
-  echo "pr:merge: PR #$n → $count commit(s) → $method (delete-branch)"
+  echo "pr:merge: PR #$n (-R $repo) → $count commit(s) → $method (delete-branch)"
 fi
 
-# Defaults always enforced: delete head branch after merge.
+# Always target origin (fork). Bare `gh pr` can resolve to upstream when both remotes exist.
 case "$method" in
-  squash) gh pr merge "$n" --squash --delete-branch ;;
-  merge-commit) gh pr merge "$n" --merge --delete-branch ;;
+  squash) gh pr merge "$n" -R "$repo" --squash --delete-branch ;;
+  merge-commit) gh pr merge "$n" -R "$repo" --merge --delete-branch ;;
 esac

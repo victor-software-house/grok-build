@@ -103,6 +103,21 @@ Operator machine details live **outside this repo** (private notes / agent memor
 - `archive/**` is permanent on `origin` — never delete or force-push those branches
 - Do not rewrite published history unless the operator asks and branch rules allow it
 
+### `gh` default repo (forks)
+
+When `upstream` exists, bare `gh pr` / `gh run` often targets the **parent** (`xai-org/…`), where PRs may be disabled.
+
+That choice is **local** (`.git/config`); it cannot be committed into the tree.
+
+After clone (or any time it drifts):
+
+```sh
+gh repo set-default origin
+```
+
+Also automatic via [`mise run worktree:setup`](mise-tasks/worktree/setup) (post-checkout).\
+Mise tasks that call `gh` pass `-R` for **origin** so they stay correct even if the default is wrong.
+
 ### Upstream sync
 
 Fast-forward `main` when you can.\

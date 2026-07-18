@@ -5,6 +5,13 @@
 
 set -euo pipefail
 
+root=$(git rev-parse --show-toplevel)
+# shellcheck source=../_lib/gh-origin.sh
+source "${root}/mise-tasks/_lib/gh-origin.sh"
+
+repo=$(origin_name_with_owner)
+ensure_gh_default_origin
+
 args=(-f "version=${usage_version}")
 if [[ "${usage_publish:-false}" == "true" ]]; then
   args+=(-f publish=true)
@@ -12,5 +19,5 @@ else
   args+=(-f publish=false)
 fi
 
-gh workflow run build-macos-arm64.yml "${args[@]}"
-gh run list --workflow=build-macos-arm64.yml --limit 3
+gh workflow run build-macos-arm64.yml -R "$repo" "${args[@]}"
+gh run list -R "$repo" --workflow=build-macos-arm64.yml --limit 3
