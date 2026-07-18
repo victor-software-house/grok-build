@@ -181,7 +181,7 @@ Huge inline `run: |` blocks are hard to test locally. Convention (this repo / of
 
 - [ ] Shared Actions cache (deps + target); document hit rates
 - [ ] Affected-crate mapping for PR
-- [ ] Release compile-only mode (skip package)
+- [x] Release compile-only mode (skip package) — `package` input / `ci:dispatch --no-package`
 - [ ] Shallow fetch when building branch tips
 
 ### Upstream sync (automation)
@@ -233,20 +233,21 @@ Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 
 ---
 
-## Outstanding wants (capture — not done)
+## Open backlog (technical)
 
-| Area | Want | Notes |
+Items still open. Completed Policy range + `pr:merge` REST gate live on this PR branch (merge to `main` pending).
+
+| Area | Open work | Constraint / note |
 |:--|:--|:--|
-| **Merge / gh** | Prefer REST + our check gate (done in PR #20); watch [cli/cli#13388](https://github.com/cli/cli/issues/13388) | Do **not** default to `--admin`; break-glass only |
-| **Policy** | Force-push-safe range (done in PR #20) | Decision log always-on; Actions debug secrets only for runner noise |
-| **Protect main** | Optionally require `cargo check pager-bin` when stable | Measure cold/warm first; don’t block main until reliable |
-| **PR CI** | Clippy / small-crate tests optional | `ci:clippy-pager` exists; not wired to workflow yet |
-| **Cache** | Shared deps/target hit rates documented | Phase C |
-| **Incremental** | Affected-crate mapping for PR checks | Phase D |
-| **Release** | Shallow fetch for branch tips; warm-up job | Phase E remainder |
-| **Lab** | `sandbox/merge-lab` + ruleset **Protect sandbox/merge-lab** | Keep for merge/CI experiments; not production |
-| **Upstream** | Scheduled sync PR automation | No auto-merge |
-| **Product** | Remote tool daemon MVP | Loopback first |
-| **Security** | SSH signed commits → then `required_signatures` | Private operator setup first |
-| **Repo shape** | Detach fork → standalone public (deferred) | Does not fix `gh` preflight; branding/parent traps only |
-| **Hygiene** | Close stale lab heads if any left open | e.g. old probe PRs already merged into lab base |
+| **Protect main** | Optionally require check context `cargo check pager-bin` | Only after cold/warm timings are acceptable; keep Policy as the hard gate until then |
+| **PR CI** | Wire `ci:clippy-pager` (and optional small-crate tests) into [`.github/workflows/pr.yml`](.github/workflows/pr.yml) | Task exists under `mise-tasks-ci/`; not in the workflow matrix yet |
+| **Cache** | Document Actions deps/target hit rates; tune keys | Phase C |
+| **Incremental** | Path → crate map for affected `cargo check -p …` | Phase D; fallback remains full pager-bin check |
+| **Release** | Shallow `fetch-depth` for branch tips; optional warm-up workflow | Phase E remainder; `package=false` path already exists |
+| **YAML** | Further shrink residual inline steps in release workflow | Staging/publish notes still in YAML |
+| **Lab** | Keep `sandbox/merge-lab` + ruleset **Protect sandbox/merge-lab** for merge/CI experiments | Not a production branch; not `main` |
+| **Upstream** | Scheduled/manual sync workflow → open sync PR only | Never auto-merge; confirm `SOURCE_REV` after merge |
+| **Product** | Remote tool daemon MVP (RPC, loopback tests, bootstrap without secrets) | Prefer existing tool-protocol/runtime crates |
+| **Signing** | SSH commit signing → GitHub Verified → then `required_signatures` on Protect main | Operator machine config stays out of this tree |
+| **Repo topology** | Detach public fork → non-fork remote (deferred) | Cosmetic/parent-default issue; does not fix `gh pr merge` preflight |
+| **Upstream CLI** | Track [cli/cli#13388](https://github.com/cli/cli/issues/13388) | Local workaround: check-runs gate + REST merge; `--admin` break-glass only |
