@@ -230,3 +230,5 @@ Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 # gql-only probe 2026-07-18T03:42:29Z
 
 # admin-probe 2026-07-18T03:51:14Z
+
+# pr-merge rest2 2026-07-18T04:10:26Z
