@@ -63,14 +63,35 @@ Leaving a dirty `main` or an unpushed branch is a **process failure**.
 
 ## Git
 
+### `main` protection
+
+Default branch is **PR-only** (ruleset **Protect main**).
+
+- No direct pushes except org-admin bypass
+- Required check: `identity + commitlint` ([`policy.yml`](.github/workflows/policy.yml))
+- Author/committer emails must match allowlist patterns (ruleset + CI)
+- Keep the Policy job `name:` stable — the ruleset binds that exact check context
+
 ### Identity
 
 Author and committer emails must match [`config/commit-email-allowlist`](config/commit-email-allowlist).
 
 | Where | How |
 |:--|:--|
-| **CI (authoritative)** | [`.github/workflows/policy.yml`](.github/workflows/policy.yml) |
+| **CI** | [`.github/workflows/policy.yml`](.github/workflows/policy.yml) |
+| **Ruleset** | email pattern rules on `main` (must stay aligned with the allowlist) |
 | Local (ad-hoc) | [`mise run identity:check`](mise-tasks/identity/check) |
+
+### Signed commits (planned)
+
+GitHub **Verified** signatures are planned for `main` (`required_signatures`).
+
+- Prefer **SSH commit signing** (not GPG)
+- Register the public key as a **signing** key on GitHub (auth keys alone are not enough)
+- Enable signing in local git config (`gpg.format=ssh`, `commit.gpgsign=true`, `user.signingkey`)
+- Do not enable the ruleset until a push shows **Verified** on github.com
+
+Operator machine details live **outside this repo** (private notes / agent memory).
 
 ### Remotes and history
 

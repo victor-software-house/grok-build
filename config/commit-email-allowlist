@@ -1,5 +1,6 @@
 # Allowed author/committer email patterns (POSIX ERE).
-# Used by: `mise run identity:check`, lefthook pre-push, and (planned) CI.
+# Used by: `mise run identity:check`, CI policy workflow, and GitHub Protect main
+# ruleset regexes (keep those in sync manually when this file changes).
 # One pattern per line. Lines starting with # and blank lines are ignored.
 # A commit passes if BOTH author and committer emails match at least one pattern.
 
