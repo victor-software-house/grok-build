@@ -224,3 +224,5 @@ Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 
 - [ ] Periodic sync from `upstream` (manual FF when possible; else sync PR + CI — see `AGENTS.md`)
 - [ ] Automate that path — see [Upstream sync (automation)](#upstream-sync-automation)
+
+<!-- merge-probe: throwaway; safe to delete -->
