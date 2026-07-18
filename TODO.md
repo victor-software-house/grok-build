@@ -96,22 +96,26 @@ Split **three lanes** so release never blocks day-to-day work:
 - [ ] Require PR rust check on Protect main **after** it is green and stable (optional ruleset bump)
 - [ ] First green PR run measured (cold vs warm); tune timeout if needed
 
-### Phase B — Move YAML soup → mise **file tasks**
+### Phase B — Move YAML soup → mise **file tasks** + CI profile
 
-Huge inline `run: |` blocks are hard to test locally. Convention (this repo / mise skill):
+Huge inline `run: |` blocks are hard to test locally. Convention (this repo / official mise):
 
 - [`mise.toml`](mise.toml) — tools + **short** one-liner tasks only
-- **No** `mise.ci.toml` task dumps — that was wrong
-- Bodies live as **executable file tasks**: [`mise-tasks/ci/<name>`](mise-tasks/ci/) → auto name `ci:<name>`
-- Headers: `#MISE description=…`, `#USAGE` for args (not TOML multi-line scripts)
+- [`mise.ci.toml`](mise.ci.toml) — **config environment** (`MISE_ENV=ci`): CI env + `task_config.includes` (not fat `run` blobs)
+- File tasks:
+  - [`mise-tasks/`](mise-tasks/) — always (operator: `ci:dispatch`, `pr:merge`, …)
+  - [`mise-tasks-ci/`](mise-tasks-ci/) — only when CI profile active (`ci:check-pager`, `ci:release-pager`, …)
+- `task_config.includes` **replaces** defaults for that scope — re-list `mise-tasks` when adding `mise-tasks-ci`
+- Base `mise.toml` is **never skipped** when `MISE_ENV=ci`
+- Headers: `#MISE description=…`, `#USAGE` for args
 - `depends` does **not** pass env to dependents — source `tools` in-process when `PROTOC` must stick
-- Workflows: `mise run ci:check-pager` (orchestration only)
+- Workflows: `MISE_ENV=ci` + `mise run ci:check-pager`
 
-- [x] File tasks: `ci:tools`, `ci:check-pager`, `ci:clippy-pager`, `ci:release-pager`, `ci:package-smoke`, `ci:dispatch`
-- [x] Wire `jdx/mise-action` + `mise run ci:*` in workflows
-- [x] Delete mistaken `mise.ci.toml` TOML task wrappers
+- [x] CI profile: `mise.ci.toml` + `mise-tasks-ci/ci/*` runner tasks
+- [x] Operator `ci:dispatch` / `ci:watch` stay under `mise-tasks/ci/`
+- [x] Wire `jdx/mise-action` + `MISE_ENV=ci` in PR + release workflows
 - [ ] `workflows:lint` + shellcheck clean on new scripts
-- [ ] Local smoke: `mise run ci:check-pager` (long first time)
+- [ ] Local smoke: `mise -E ci run ci:check-pager` (long first time)
 
 ### Phase C — Caches that actually hit
 
@@ -161,9 +165,10 @@ Huge inline `run: |` blocks are hard to test locally. Convention (this repo / mi
 
 ### mise CI extraction
 
-- [x] File tasks under `mise-tasks/ci/` (not TOML blobs)
-- [x] `ci:tools` / `ci:check-pager` / `ci:clippy-pager` / `ci:release-pager` / `ci:package-smoke`
-- [x] Workflows call `mise run ci:*`; YAML stays mostly orchestration
+- [x] `mise.ci.toml` config environment + non-additive `includes`
+- [x] Runner file tasks under `mise-tasks-ci/ci/`
+- [x] Operator `ci:dispatch` / `ci:watch` under `mise-tasks/ci/`
+- [x] Workflows: `MISE_ENV=ci` + `mise run ci:*`
 - [ ] Further shrink residual YAML (raw staging / publish notes) if desired
 
 ### Cache + incremental
@@ -201,7 +206,7 @@ Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 - [x] Local overrides in `.gitignore` (`mise.local.toml`, `lefthook-local.yml`, `.envrc.*`, `.env*`, …)
 - [x] `lefthook.yml` thin callers (`commit-msg` commitlint, `post-checkout` worktree setup; identity is CI-only)
 - [x] CI policy workflow (`identity:check` + `commitlint:range`)
-- [x] CI file tasks under `mise-tasks/ci/` (see Phase B)
+- [x] CI profile (`mise.ci.toml` + `mise-tasks-ci/`) — see Phase B
 
 ## Docs
 

@@ -39,13 +39,13 @@ concurrency:
 
 env:
   RELEASE_VERSION: ${{ inputs.version }}
+  # Load mise.ci.toml (base mise.toml still merges in).
+  MISE_ENV: ci
 
 jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 120
-    env:
-      CARGO_INCREMENTAL: "0"
     outputs:
       source_sha: ${{ steps.resolve.outputs.source_sha }}
     steps:

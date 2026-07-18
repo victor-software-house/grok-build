@@ -1,0 +1,18 @@
+# CI config environment — loaded only with MISE_ENV=ci or: mise -E ci …
+# Docs: https://mise.jdx.dev/configuration/environments.html
+#
+# Does NOT replace mise.toml. Merge order (later wins):
+#   mise.toml → mise.ci.toml → mise.local.toml → mise.ci.local.toml
+#
+# task_config.includes is NOT additive: when set, it replaces default file-task
+# dirs for this scope. Re-list mise-tasks so operator tasks stay visible in CI.
+
+[env]
+CARGO_INCREMENTAL = "0"
+CARGO_TERM_COLOR = "always"
+
+[task_config]
+includes = [
+  "mise-tasks",     # operator + shared file tasks (pr:merge, ci:dispatch, …)
+  "mise-tasks-ci",  # runner-only (ci:check-pager, ci:release-pager, …)
+]

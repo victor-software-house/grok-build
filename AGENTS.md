@@ -148,8 +148,20 @@ Use **GitHub-hosted free-tier runners** instead.
 | Dispatch / watch: [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Install helper: [`scripts/install-github-release.sh`](scripts/install-github-release.sh) |
 
 **Lanes:** Policy (every PR) · PR rust (Linux check) · Release (macOS, rare).\
-Do **not** use the macOS release workflow to “see if it compiles” — that burns the 5-wide macOS concurrency pool for nothing.\
-CI work is **file tasks** under [`mise-tasks/ci/`](mise-tasks/ci/) (`ci:check-pager`, `ci:release-pager`, …) — executable scripts with `#MISE` headers, not fat TOML `run` blocks.\
+Do **not** use the macOS release workflow to “see if it compiles” — that burns the 5-wide macOS concurrency pool for nothing.
+
+**mise CI profile** ([Config Environments](https://mise.jdx.dev/configuration/environments.html)):
+
+| Always | Only with `MISE_ENV=ci` / `mise -E ci` |
+|:--|:--|
+| [`mise.toml`](mise.toml) + [`mise-tasks/`](mise-tasks/) | + [`mise.ci.toml`](mise.ci.toml) + [`mise-tasks-ci/`](mise-tasks-ci/) |
+
+- Base is **never skipped** — `mise.ci.toml` layers on top.
+- `task_config.includes` in `mise.ci.toml` is **not additive**; it re-lists `mise-tasks` and adds `mise-tasks-ci`.
+- Operator: `ci:dispatch` / `ci:watch` live under `mise-tasks/ci/` (always visible).
+- Runner: `ci:check-pager`, `ci:release-pager`, `ci:tools`, … under `mise-tasks-ci/ci/` (GHA sets `MISE_ENV=ci`).
+- Local repro of runner tasks: `mise -E ci run ci:check-pager`.
+
 Release input `source_ref` = branch/tag/SHA; `ci:dispatch --ref` sets it; `--workflow-ref` is only which branch hosts the YAML; `--no-package` skips installer smoke; `--watch` tails the run.
 
 ---
@@ -158,7 +170,7 @@ Release input `source_ref` = branch/tag/SHA; `ci:dispatch --ref` sets it; `--wor
 
 - Interactive shells: [`.envrc`](.envrc) → `use_mise_env` (direnv)
 - **Never** `mise activate` — direnv owns PATH injection
-- Agents / CI / scripts: `mise run …` or `mise x -- …` via [`mise.toml`](mise.toml)
+- Agents / CI / scripts: `mise run …` or `mise x -- …` via [`mise.toml`](mise.toml); GHA uses `MISE_ENV=ci`
 - Rust: [`rust-toolchain.toml`](rust-toolchain.toml) + rustup (not mise)
 - Git hooks: thin [`lefthook.yml`](lefthook.yml) → [`mise-tasks/`](mise-tasks/)
 - Local hooks: `commit-msg` only

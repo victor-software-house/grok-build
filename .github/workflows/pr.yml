@@ -15,8 +15,10 @@ on:
       - "bin/**"
       - "third_party/**"
       - "mise.toml"
+      - "mise.ci.toml"
       - "mise.lock"
-      - "mise-tasks/ci/**"
+      - "mise-tasks/**"
+      - "mise-tasks-ci/**"
       - ".github/workflows/pr.yml"
 
 permissions:
@@ -32,8 +34,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_TERM_COLOR: always
+      # Load mise.ci.toml (base mise.toml still merges in).
+      MISE_ENV: ci
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
