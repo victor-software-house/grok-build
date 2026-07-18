@@ -143,12 +143,26 @@ Use **GitHub-hosted free-tier runners** instead.
 | On GitHub | Local (only if the operator asks) |
 |:--|:--|
 | [Policy](.github/workflows/policy.yml): identity + commitlint on PR / push to `main` | [`mise run check\|clippy\|test -- <crate>`](mise.toml) |
-| macOS release build: [`build-macos-arm64.yml`](.github/workflows/build-macos-arm64.yml) builds a **chosen ref of this repo** | No workspace `cargo build --release` without approval |
+| [PR](.github/workflows/pr.yml): Linux `cargo check -p xai-grok-pager-bin` (path-filtered) | Prefer crate-scoped check; full workspace is slow |
+| **Ship only:** [build-macos-arm64](.github/workflows/build-macos-arm64.yml) on `workflow_dispatch` → macOS arm64 **release** binary | No workspace `cargo build --release` without approval |
 | Dispatch / watch: [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Install helper: [`scripts/install-github-release.sh`](scripts/install-github-release.sh) |
 
-Release packaging is **not** an upstream-pin rebuild.\
-Input `source_ref` = branch, tag, or commit SHA to compile (empty → tip of the branch you started the run from).\
-`ci:dispatch --ref` sets that; `--workflow-ref` is only which branch hosts the workflow YAML (needed so `gh` can start a run that has the file).
+**Lanes:** Policy (every PR) · PR rust (Linux check) · Release (macOS, rare).\
+Do **not** use the macOS release workflow to “see if it compiles” — that burns the 5-wide macOS concurrency pool for nothing.
+
+**mise CI profile** ([Config Environments](https://mise.jdx.dev/configuration/environments.html)):
+
+| Always | Only with `MISE_ENV=ci` / `mise -E ci` |
+|:--|:--|
+| [`mise.toml`](mise.toml) + [`mise-tasks/`](mise-tasks/) | + [`mise.ci.toml`](mise.ci.toml) + [`mise-tasks-ci/`](mise-tasks-ci/) |
+
+- Base is **never skipped** — `mise.ci.toml` layers on top.
+- `task_config.includes` in `mise.ci.toml` is **not additive**; it re-lists `mise-tasks` and adds `mise-tasks-ci`.
+- Operator: `ci:dispatch` / `ci:watch` live under `mise-tasks/ci/` (always visible).
+- Runner: `ci:check-pager`, `ci:release-pager`, `ci:tools`, … under `mise-tasks-ci/ci/` (GHA sets `MISE_ENV=ci`).
+- Local repro of runner tasks: `mise -E ci run ci:check-pager`.
+
+Release input `source_ref` = branch/tag/SHA; `ci:dispatch --ref` sets it; `--workflow-ref` is only which branch hosts the YAML; `--no-package` skips installer smoke; `--watch` tails the run.
 
 ---
 
@@ -156,7 +170,7 @@ Input `source_ref` = branch, tag, or commit SHA to compile (empty → tip of the
 
 - Interactive shells: [`.envrc`](.envrc) → `use_mise_env` (direnv)
 - **Never** `mise activate` — direnv owns PATH injection
-- Agents / CI / scripts: `mise run …` or `mise x -- …` via [`mise.toml`](mise.toml)
+- Agents / CI / scripts: `mise run …` or `mise x -- …` via [`mise.toml`](mise.toml); GHA uses `MISE_ENV=ci`
 - Rust: [`rust-toolchain.toml`](rust-toolchain.toml) + rustup (not mise)
 - Git hooks: thin [`lefthook.yml`](lefthook.yml) → [`mise-tasks/`](mise-tasks/)
 - Local hooks: `commit-msg` only
@@ -172,7 +186,7 @@ Input `source_ref` = branch, tag, or commit SHA to compile (empty → tip of the
 | [`identity:check`](mise-tasks/identity/check) | Check author/committer emails against the allowlist |
 | [`pr:merge -- <N>`](mise-tasks/pr/merge) | Merge a PR using the defaults under [Workflow](#workflow-mandatory) |
 | [`main:sync`](mise-tasks/main/sync) | After merge: update `main` and drop locals whose remote is gone |
-| [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Dispatch / watch macOS build (`--ref` branch/tag/SHA, `--workflow-ref`, `--publish`, `--version`) |
+| [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Ship lane: `--ref`, `--workflow-ref`, `--no-package`, `--publish`, `--version`, `--watch` |
 | `workflows:lint` | Lint workflows with actionlint |
 | `hooks:install` / [`worktree:setup`](mise-tasks/worktree/setup) | Install lefthook; set up a linked worktree |
 

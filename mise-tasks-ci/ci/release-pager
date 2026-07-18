@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#MISE description="Ship lane: cargo build --release -p xai-grok-pager-bin (macOS arm64 for Mach-O)"
+#MISE dir="{{ config_root }}"
+
+set -euo pipefail
+
+# shellcheck source=tools
+source "$(dirname "$0")/tools"
+
+: "${CARGO_TARGET_DIR:=${RUNNER_TEMP:-/tmp}/grok-target}"
+export CARGO_TARGET_DIR
+mkdir -p "$CARGO_TARGET_DIR"
+
+cargo build --locked -p xai-grok-pager-bin --release
+test -x "$CARGO_TARGET_DIR/release/xai-grok-pager"
+printf 'release binary: %s\n' "$CARGO_TARGET_DIR/release/xai-grok-pager"
