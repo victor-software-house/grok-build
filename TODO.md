@@ -18,6 +18,8 @@ Fork-local work tracking. Technical only (no secrets, no client/personal data).
 - [x] GitHub ruleset email patterns on default branch (Protect main)
 - [x] Require Policy status + PR path on `main` (Protect main)
 - [x] Restrict direct pushes (`update` + org-admin bypass)
+- [x] Policy range harden: force-push-safe `before` (tip-only fallback + decision log)
+- [x] `pr:merge`: required check-runs gate + REST merge (avoid `gh` BLOCKED preflight; `--admin` break-glass only)
 - [ ] Signed commits: enable `required_signatures` on Protect main **after** SSH signing shows Verified on a real push
   - Prefer SSH signing (not GPG); public key must be a GitHub **signing** key
   - Local: `gpg.format=ssh`, `commit.gpgsign=true`, `user.signingkey`

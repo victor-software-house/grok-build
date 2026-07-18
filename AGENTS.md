@@ -50,10 +50,11 @@ Do not write one dense paragraph wall.
    Post the URL and a short summary, then **stop**.
 5. **Merge only** after explicit approval in the conversation:\
    [`mise run pr:merge -- <N>`](mise-tasks/pr/merge)
-   - Always deletes the PR head branch
-   - **One** commit on the PR → *squash* merge
-   - **Two or more** commits → *merge commit*
-   - Overrides only if asked: `--squash` or `--merge-commit`
+   - Verifies required check-runs (default: `identity + commitlint`) are **success** on the head SHA
+   - Merges via **REST** (not `gh pr merge` GraphQL preflight on `mergeStateStatus`)
+   - Always deletes the PR head branch when possible
+   - **One** commit → *squash*; **two or more** → *merge commit*
+   - Overrides: `--squash` / `--merge-commit`; break-glass `--admin` only if asked
 6. **After merge:** [`mise run main:sync`](mise-tasks/main/sync)\
    Never delete or rewrite `archive/**` branches.
 
@@ -184,7 +185,7 @@ Release input `source_ref` = branch/tag/SHA; `ci:dispatch --ref` sets it; `--wor
 | `check\|clippy\|test -- <crate>` | Crate-scoped cargo (not the full workspace) |
 | [`commitlint:msg`](mise-tasks/commitlint/msg) / [`commitlint:range`](mise-tasks/commitlint/range) | Validate Conventional Commit subjects |
 | [`identity:check`](mise-tasks/identity/check) | Check author/committer emails against the allowlist |
-| [`pr:merge -- <N>`](mise-tasks/pr/merge) | Merge a PR using the defaults under [Workflow](#workflow-mandatory) |
+| [`pr:merge -- <N>`](mise-tasks/pr/merge) | Check-gated REST merge (`--squash` / `--merge-commit` / break-glass `--admin`) |
 | [`main:sync`](mise-tasks/main/sync) | After merge: update `main` and drop locals whose remote is gone |
 | [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Ship lane: `--ref`, `--workflow-ref`, `--no-package`, `--publish`, `--version`, `--watch` |
 | `workflows:lint` | Lint workflows with actionlint |
