@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-#MISE description="Dispatch build-macos-arm64.yml (publish=false by default)"
+#MISE description="Dispatch build-macos-arm64.yml for a git ref (default: current branch)"
 #USAGE flag "--publish" help="Publish a prerelease after the build"
-#USAGE flag "--version <version>" default="v0.0.0-ci" help="Release tag when publishing"
+#USAGE flag "--version <version>" default="v0.0.0-vsh.0" help="Release tag (vX.Y.Z-vsh.N)"
+#USAGE flag "--ref <ref>" default="" help="Git ref to build (default: current branch)"
 
 set -euo pipefail
 
@@ -12,12 +13,28 @@ source "${root}/mise-tasks/_lib/gh-origin.sh"
 repo=$(origin_name_with_owner)
 ensure_gh_default_origin
 
-args=(-f "version=${usage_version}")
+ref=${usage_ref:-}
+if [[ -z "$ref" ]]; then
+  ref=$(git branch --show-current)
+fi
+if [[ -z "$ref" ]]; then
+  printf 'No branch checked out; pass --ref <ref>\n' >&2
+  exit 1
+fi
+
+if ! [[ "${usage_version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-vsh\.[0-9]+$ ]]; then
+  printf '--version must match vX.Y.Z-vsh.N (got %s)\n' "$usage_version" >&2
+  exit 1
+fi
+
+args=(-f "version=${usage_version}" --ref "$ref")
 if [[ "${usage_publish:-false}" == "true" ]]; then
   args+=(-f publish=true)
 else
   args+=(-f publish=false)
 fi
 
+printf 'Dispatching build-macos-arm64.yml on %s @ %s (publish=%s version=%s)\n' \
+  "$repo" "$ref" "${usage_publish:-false}" "$usage_version"
 gh workflow run build-macos-arm64.yml -R "$repo" "${args[@]}"
 gh run list -R "$repo" --workflow=build-macos-arm64.yml --limit 3

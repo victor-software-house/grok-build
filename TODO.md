@@ -25,10 +25,22 @@ Fork-local work tracking. Technical only (no secrets, no client/personal data).
 
 ## CI / builds
 
-- [ ] PR builds on standard GitHub-hosted runners (or dispatch from PR head) so work does not depend on local monorepo compiles
+- [x] macOS release workflow builds **this repo’s dispatch ref** (`github.sha`) — not an upstream pin
+- [ ] PR builds on standard GitHub-hosted runners (check/clippy scoped or light matrix) so work does not depend on local monorepo compiles
 - [ ] Shared Actions cache across branches/PRs (deps + target; document what actually hits)
-- [ ] Keep workflow `UPSTREAM_SHA` / release pins aligned after each upstream sync
 - [ ] Stay on free GitHub-hosted runner SKUs (no large/self-hosted unless approved)
+
+## Upstream sync (automation)
+
+Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
+
+- [ ] Scheduled (or manual-dispatch) workflow that fetches `upstream/main`, opens a **sync PR** into `main` when behind
+  - Prefer fast-forward branch when history allows; otherwise merge/rebase branch + PR (never force-push `main`)
+  - Use `pull_request` path so Policy + future PR CI run
+  - Label / title convention e.g. `chore(sync): upstream main @ <short-sha>`
+  - Do not auto-merge without operator approval
+- [ ] After merge: confirm [`SOURCE_REV`](SOURCE_REV) still matches the public export’s provenance note (file comes from upstream; do not invent SHAs)
+- [ ] Optional: notify operator (issue comment only — no secrets/webhooks required for MVP)
 
 ## Remote tool execution
 
@@ -58,4 +70,5 @@ Fork-local work tracking. Technical only (no secrets, no client/personal data).
 
 ## Upstream
 
-- [ ] Periodic sync from `upstream` (FF when possible; else sync PR + CI — see `AGENTS.md`)
+- [ ] Periodic sync from `upstream` (manual FF when possible; else sync PR + CI — see `AGENTS.md`)
+- [ ] Automate that path — see [Upstream sync (automation)](#upstream-sync-automation)

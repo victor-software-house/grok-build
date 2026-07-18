@@ -143,8 +143,11 @@ Use **GitHub-hosted free-tier runners** instead.
 | On GitHub | Local (only if the operator asks) |
 |:--|:--|
 | [Policy](.github/workflows/policy.yml): identity + commitlint on PR / push to `main` | [`mise run check\|clippy\|test -- <crate>`](mise.toml) |
-| Release packaging: [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | No workspace `cargo build --release` without approval |
-| Workflow definition: [`build-macos-arm64.yml`](.github/workflows/build-macos-arm64.yml) | Install helper: [`scripts/install-github-release.sh`](scripts/install-github-release.sh) |
+| macOS release build: [`build-macos-arm64.yml`](.github/workflows/build-macos-arm64.yml) builds the **dispatch ref** (`github.sha`) of **this** repo | No workspace `cargo build --release` without approval |
+| Dispatch / watch: [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) (`--ref`, optional `--publish`) | Install helper: [`scripts/install-github-release.sh`](scripts/install-github-release.sh) |
+
+Release packaging is **not** an upstream-pin rebuild.\
+It compiles whatever commit you run the workflow on (branch tip / chosen ref).
 
 ---
 
@@ -168,7 +171,7 @@ Use **GitHub-hosted free-tier runners** instead.
 | [`identity:check`](mise-tasks/identity/check) | Check author/committer emails against the allowlist |
 | [`pr:merge -- <N>`](mise-tasks/pr/merge) | Merge a PR using the defaults under [Workflow](#workflow-mandatory) |
 | [`main:sync`](mise-tasks/main/sync) | After merge: update `main` and drop locals whose remote is gone |
-| [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Dispatch / watch the macOS release workflow |
+| [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Dispatch / watch macOS release build for a ref (`--ref`, `--publish`, `--version`) |
 | `workflows:lint` | Lint workflows with actionlint |
 | `hooks:install` / [`worktree:setup`](mise-tasks/worktree/setup) | Install lefthook; set up a linked worktree |
 
