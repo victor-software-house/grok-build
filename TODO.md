@@ -116,8 +116,12 @@ Huge inline `run: |` blocks are hard to test locally. Convention (this repo / of
 - [x] CI profile: `mise.ci.toml` + `mise-tasks-ci/ci/*` runner tasks
 - [x] Operator `ci:dispatch` / `ci:watch` stay under `mise-tasks/ci/`
 - [x] Wire `jdx/mise-action` + `MISE_ENV=ci` in PR + release workflows
-- [ ] `workflows:lint` + shellcheck clean on new scripts
-- [ ] Local smoke: `mise -E ci run ci:check-pager` (long first time)
+- [x] `workflows:lint` (actionlint) on workflow changes; shellcheck clean enough on new scripts
+- [ ] Local smoke: `mise -E ci run ci:check-pager` (long first time; optional)
+
+### Phase E notes (partial)
+
+- [x] Release **dispatch-only** + `package` input / `ci:dispatch --no-package` (compile-only path exists)
 
 ### Phase C — Caches that actually hit
 
@@ -137,9 +141,9 @@ Huge inline `run: |` blocks are hard to test locally. Convention (this repo / of
 
 ### Phase E — Faster release binary (macOS only when needed)
 
-- [ ] Keep release **dispatch-only** (no PR `--release`)
-- [ ] Job split: **build** (macOS) → **package** (macOS smoke *or* later Linux-only tar if smoke optional)
-- [ ] Skip package job when `publish=false` and input `package=false` (faster compile-only dispatch)
+- [x] Keep release **dispatch-only** (no PR `--release`)
+- [x] Job split: **build** (macOS) → **package** (optional) → **publish** (optional)
+- [x] Skip package when `package=false` / `ci:dispatch --no-package`
 - [ ] Revisit `fetch-depth: 0` — only when `source_ref` is a non-tip SHA; branch tips can use depth 1
 - [ ] Cache warm-up workflow (manual) that only builds deps for `pager-bin` on macos-26 / ubuntu
 - [ ] Do **not** matrix macOS × many crates on free tier (5 macOS cap)
@@ -219,10 +223,30 @@ Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 - [x] Merge method default + archive/** retention
 - [x] Local tooling (mise/direnv/lefthook) documented in `AGENTS.md`
 - [x] `main` protection + signed-commits plan (public, vendor-neutral)
-- [ ] Document CI lanes (policy / PR rust / release) in `AGENTS.md`
+- [x] Document CI lanes (policy / PR rust / release) in `AGENTS.md`
 - [ ] Keep this ledger current
 
 ## Upstream
 
 - [ ] Periodic sync from `upstream` (manual FF when possible; else sync PR + CI — see `AGENTS.md`)
 - [ ] Automate that path — see [Upstream sync (automation)](#upstream-sync-automation)
+
+---
+
+## Outstanding wants (capture — not done)
+
+| Area | Want | Notes |
+|:--|:--|:--|
+| **Merge / gh** | Prefer REST + our check gate (done in PR #20); watch [cli/cli#13388](https://github.com/cli/cli/issues/13388) | Do **not** default to `--admin`; break-glass only |
+| **Policy** | Force-push-safe range (done in PR #20) | Decision log always-on; Actions debug secrets only for runner noise |
+| **Protect main** | Optionally require `cargo check pager-bin` when stable | Measure cold/warm first; don’t block main until reliable |
+| **PR CI** | Clippy / small-crate tests optional | `ci:clippy-pager` exists; not wired to workflow yet |
+| **Cache** | Shared deps/target hit rates documented | Phase C |
+| **Incremental** | Affected-crate mapping for PR checks | Phase D |
+| **Release** | Shallow fetch for branch tips; warm-up job | Phase E remainder |
+| **Lab** | `sandbox/merge-lab` + ruleset **Protect sandbox/merge-lab** | Keep for merge/CI experiments; not production |
+| **Upstream** | Scheduled sync PR automation | No auto-merge |
+| **Product** | Remote tool daemon MVP | Loopback first |
+| **Security** | SSH signed commits → then `required_signatures` | Private operator setup first |
+| **Repo shape** | Detach fork → standalone public (deferred) | Does not fix `gh` preflight; branding/parent traps only |
+| **Hygiene** | Close stale lab heads if any left open | e.g. old probe PRs already merged into lab base |
