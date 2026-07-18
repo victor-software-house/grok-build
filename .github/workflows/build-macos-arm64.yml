@@ -1,28 +1,38 @@
-name: Build macOS arm64 from source
+name: Build macOS arm64
+
+# Builds a chosen ref of *this* fork (branch, tag, or commit SHA).
+# Not an upstream pin. Manual release packaging.
 
 on:
   workflow_dispatch:
     inputs:
+      source_ref:
+        description: >-
+          Branch, tag, or commit SHA to build. Empty = tip of the branch
+          you started the workflow from (github.sha).
+        required: false
+        default: ""
+        type: string
       publish:
         description: Publish a prerelease after build and installer checks pass
         required: true
         default: false
         type: boolean
       version:
-        description: GitHub Release tag
+        description: GitHub Release tag (vX.Y.Z-vsh.N)
         required: true
-        default: v0.2.101-vsh.1
+        default: v0.0.0-vsh.0
         type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-macos-arm64-${{ github.ref }}
+  group: >-
+    build-macos-arm64-${{ github.workflow }}-${{ inputs.source_ref || github.sha }}-${{ inputs.version }}
   cancel-in-progress: true
 
 env:
-  UPSTREAM_SHA: 8adf9013a0929e5c7f1d4e849492d2387837a28d
   RELEASE_VERSION: ${{ inputs.version }}
 
 jobs:
@@ -31,30 +41,33 @@ jobs:
     timeout-minutes: 120
     env:
       CARGO_INCREMENTAL: "0"
+    outputs:
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
+          # 0 so arbitrary SHAs (not only branch tips) resolve.
           fetch-depth: 0
+          ref: ${{ inputs.source_ref || github.sha }}
 
-      - name: Verify runner and source boundary
+      - name: Resolve source tip
+        id: resolve
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
-          git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD
-          actual=$(git diff --name-only "$UPSTREAM_SHA"..HEAD | sort)
-          expected=$(printf '%s\n' \
-            .github/workflows/build-macos-arm64.yml \
-            scripts/install-github-release.sh | sort)
-          test "$actual" = "$expected"
+          sha=$(git rev-parse HEAD)
+          printf 'source_sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+          printf 'SOURCE_SHA=%s\n' "$sha" >> "$GITHUB_ENV"
           mkdir -p "$HOME/.cargo/registry" "$HOME/.cargo/git" "$RUNNER_TEMP/grok-target"
           printf 'CARGO_TARGET_DIR=%s/grok-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          git checkout --detach "$UPSTREAM_SHA"
-          test "$(git rev-parse HEAD)" = "$UPSTREAM_SHA"
           uname -a
           rustc --version
           cargo --version
           df -h "$RUNNER_TEMP"
+          printf 'checkout_ref_input=%s\n' "${{ inputs.source_ref }}"
+          printf 'Building %s @ %s (requested %s)\n' \
+            "$GITHUB_REPOSITORY" "$sha" "${{ inputs.source_ref || github.sha }}"
 
       - name: Restore Cargo dependency cache
         id: deps_cache_restore
@@ -66,13 +79,15 @@ jobs:
             ~/.cargo/git
           key: macos-26-arm64-rust-1.92.0-deps-${{ hashFiles('Cargo.lock') }}
 
-      - name: Restore exact-source target cache
+      - name: Restore target cache
         id: target_cache_restore
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ${{ runner.temp }}/grok-target
-          key: macos-26-arm64-rust-1.92.0-target-${{ env.UPSTREAM_SHA }}-${{ hashFiles('Cargo.lock') }}
+          key: macos-26-arm64-rust-1.92.0-target-${{ steps.resolve.outputs.source_sha }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            macos-26-arm64-rust-1.92.0-target-
 
       - name: Resolve pinned build tools without Homebrew
         run: |
@@ -106,10 +121,10 @@ jobs:
           "$rg" --version
           df -h "$RUNNER_TEMP"
 
-      - name: Build release CLI from exact upstream source
+      - name: Build release CLI
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$UPSTREAM_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           cargo build --locked -p xai-grok-pager-bin --release
           test -x "$CARGO_TARGET_DIR/release/xai-grok-pager"
           df -h "$RUNNER_TEMP"
@@ -128,7 +143,8 @@ jobs:
           shasum -a 256 "$artifact" | tee "$raw/sha256.txt"
           stat -f '%z bytes' "$artifact" | tee "$raw/size.txt"
           cp "$artifact" "$raw/xai-grok-pager"
-          printf '%s\n' "$UPSTREAM_SHA" > "$raw/source-commit.txt"
+          printf '%s\n' "$SOURCE_SHA" > "$raw/source-commit.txt"
+          printf '%s\n' "${{ inputs.source_ref || github.sha }}" > "$raw/source-ref.txt"
 
       - name: Upload raw compiled binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -163,13 +179,13 @@ jobs:
             printf 'Skipping target cache: %s bytes exceeds 6 GiB limit; dependency cache remains enabled.\n' "$bytes"
           fi
 
-      - name: Save exact-source target cache
+      - name: Save target cache
         if: steps.target_cache_restore.outputs.cache-hit != 'true' && steps.target_cache_size.outputs.save == 'true'
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/grok-target
-          key: macos-26-arm64-rust-1.92.0-target-${{ env.UPSTREAM_SHA }}-${{ hashFiles('Cargo.lock') }}
+          key: macos-26-arm64-rust-1.92.0-target-${{ steps.resolve.outputs.source_sha }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Clean build intermediates
         if: always()
@@ -179,11 +195,14 @@ jobs:
     needs: build
     runs-on: macos-26
     timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
+          ref: ${{ inputs.source_ref || github.sha }}
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -194,7 +213,8 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-vsh\.[0-9]+$ ]]
-          test "$(cat raw/source-commit.txt)" = "$UPSTREAM_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(cat raw/source-commit.txt)" = "$SOURCE_SHA"
           test "$(shasum -a 256 raw/xai-grok-pager | awk '{print $1}')" = \
             "$(awk '{print $1}' raw/sha256.txt)"
           chmod 0755 raw/xai-grok-pager
@@ -209,7 +229,7 @@ jobs:
           cp raw/xai-grok-pager "$package_root/xai-grok-pager"
           cp raw/version.txt raw/help.txt raw/file.txt raw/otool.txt raw/size.txt "$package_root/"
           ln -s xai-grok-pager "$package_root/grok"
-          printf '%s\n' "$UPSTREAM_SHA" > "$package_root/source-commit.txt"
+          printf '%s\n' "$SOURCE_SHA" > "$package_root/source-commit.txt"
           tar -C "$RUNNER_TEMP/package" -czf "$release_root/$package_name.tar.gz" "$package_name"
           sed "s/__RELEASE_VERSION__/$RELEASE_VERSION/" \
             scripts/install-github-release.sh > "$release_root/install-github-release.sh"
@@ -251,36 +271,39 @@ jobs:
 
   publish:
     if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs: package
+    needs: [build, package]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: grok-build-release-assets
           path: release
 
-      - name: Publish source-pinned prerelease
+      - name: Publish prerelease for the built commit
         run: |
           set -euo pipefail
-          test "$RELEASE_VERSION" = v0.2.101-vsh.1
-          gh api "repos/$GITHUB_REPOSITORY/git/commits/$UPSTREAM_SHA" --jq .sha \
-            | grep -qx "$UPSTREAM_SHA"
+          [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-vsh\.[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/git/commits/$SOURCE_SHA" --jq .sha \
+            | grep -qx "$SOURCE_SHA"
           if gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             printf 'Release %s already exists\n' "$RELEASE_VERSION" >&2
             exit 1
           fi
+          short_sha=$(printf '%.8s' "$SOURCE_SHA")
           cat > "$RUNNER_TEMP/release-notes.md" <<EOF
-          Source-built Grok Build CLI for macOS arm64.
+          Source-built Grok Build CLI for macOS arm64 (this fork).
 
-          - Upstream source: xai-org/grok-build@$UPSTREAM_SHA
+          - Source: \`$GITHUB_REPOSITORY@$SOURCE_SHA\`
+          - Requested ref: \`${{ inputs.source_ref || github.sha }}\`
           - Built on GitHub-hosted macos-26 (Apple Silicon)
           - Canonical binary: xai-grok-pager
           - Installed command: grok (relative symlink)
-          - Status: prerelease; upstream version 0.2.101 alpha
+          - Status: prerelease
 
           Install:
 
@@ -292,8 +315,8 @@ jobs:
           EOF
           gh release create "$RELEASE_VERSION" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$UPSTREAM_SHA" \
-            --title "Grok Build 0.2.101 VSH source build 1" \
+            --target "$SOURCE_SHA" \
+            --title "Grok Build $RELEASE_VERSION ($short_sha)" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             --prerelease \
             release/*

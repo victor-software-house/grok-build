@@ -143,8 +143,12 @@ Use **GitHub-hosted free-tier runners** instead.
 | On GitHub | Local (only if the operator asks) |
 |:--|:--|
 | [Policy](.github/workflows/policy.yml): identity + commitlint on PR / push to `main` | [`mise run check\|clippy\|test -- <crate>`](mise.toml) |
-| Release packaging: [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | No workspace `cargo build --release` without approval |
-| Workflow definition: [`build-macos-arm64.yml`](.github/workflows/build-macos-arm64.yml) | Install helper: [`scripts/install-github-release.sh`](scripts/install-github-release.sh) |
+| macOS release build: [`build-macos-arm64.yml`](.github/workflows/build-macos-arm64.yml) builds a **chosen ref of this repo** | No workspace `cargo build --release` without approval |
+| Dispatch / watch: [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Install helper: [`scripts/install-github-release.sh`](scripts/install-github-release.sh) |
+
+Release packaging is **not** an upstream-pin rebuild.\
+Input `source_ref` = branch, tag, or commit SHA to compile (empty → tip of the branch you started the run from).\
+`ci:dispatch --ref` sets that; `--workflow-ref` is only which branch hosts the workflow YAML (needed so `gh` can start a run that has the file).
 
 ---
 
@@ -168,7 +172,7 @@ Use **GitHub-hosted free-tier runners** instead.
 | [`identity:check`](mise-tasks/identity/check) | Check author/committer emails against the allowlist |
 | [`pr:merge -- <N>`](mise-tasks/pr/merge) | Merge a PR using the defaults under [Workflow](#workflow-mandatory) |
 | [`main:sync`](mise-tasks/main/sync) | After merge: update `main` and drop locals whose remote is gone |
-| [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Dispatch / watch the macOS release workflow |
+| [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Dispatch / watch macOS build (`--ref` branch/tag/SHA, `--workflow-ref`, `--publish`, `--version`) |
 | `workflows:lint` | Lint workflows with actionlint |
 | `hooks:install` / [`worktree:setup`](mise-tasks/worktree/setup) | Install lefthook; set up a linked worktree |
 
