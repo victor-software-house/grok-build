@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Pin-download protoc (all CI OS) and ripgrep (macOS release bundle env).
+# Safe to `source` from other CI tasks so PROTOC lands in the same shell.
+set -euo pipefail
+
+tools="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/grok-ci-tools"
+mkdir -p "$tools"
+
+os=$(uname -s)
+arch=$(uname -m)
+
+case "$os-$arch" in
+  Darwin-arm64)
+    protoc_url=https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-osx-aarch_64.zip
+    protoc_sha=2b8a3403cd097f95f3ba656e14b76c732b6b26d7f183330b11e36ef2bc028765
+    ;;
+  Linux-x86_64)
+    protoc_url=https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
+    protoc_sha=3e866620c5be27664f3d2fa2d656b5f3e09b5152b42f1bedbf427b333e90021a
+    ;;
+  Linux-aarch64)
+    protoc_url=https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-aarch_64.zip
+    protoc_sha=6427349140e01f06e049e707a58709a4f221ae73ab9a0425bc4a00c8d0e1ab32
+    ;;
+  *)
+    printf 'ci:tools: unsupported platform %s-%s (install protoc yourself)\n' "$os" "$arch" >&2
+    return 1 2>/dev/null || exit 1
+    ;;
+esac
+
+protoc_zip="$tools/protoc.zip"
+if [[ ! -x "$tools/protoc/bin/protoc" ]]; then
+  curl -fsSL "$protoc_url" -o "$protoc_zip"
+  actual=$(shasum -a 256 "$protoc_zip" | awk '{print $1}')
+  if [[ "$actual" != "$protoc_sha" ]]; then
+    printf 'ci:tools: protoc sha mismatch\n  want %s\n  got  %s\n' "$protoc_sha" "$actual" >&2
+    return 1 2>/dev/null || exit 1
+  fi
+  rm -rf "$tools/protoc"
+  unzip -q "$protoc_zip" -d "$tools/protoc"
+fi
+export PROTOC="$tools/protoc/bin/protoc"
+printf 'PROTOC=%s\n' "$PROTOC"
+"$PROTOC" --version
+
+if [[ "$os" == Darwin ]]; then
+  rg_archive="$tools/ripgrep.tar.gz"
+  rg_url=https://github.com/BurntSushi/ripgrep/releases/download/15.0.0/ripgrep-15.0.0-aarch64-apple-darwin.tar.gz
+  rg_sha=98bb2e61e7277ba0ea72d2ae2592497fd8d2940934a16b122448d302a6637e3b
+  rg_dir="$tools/ripgrep-15.0.0-aarch64-apple-darwin"
+  if [[ ! -x "$rg_dir/rg" ]]; then
+    curl -fsSL "$rg_url" -o "$rg_archive"
+    actual=$(shasum -a 256 "$rg_archive" | awk '{print $1}')
+    if [[ "$actual" != "$rg_sha" ]]; then
+      printf 'ci:tools: ripgrep sha mismatch\n  want %s\n  got  %s\n' "$rg_sha" "$actual" >&2
+      return 1 2>/dev/null || exit 1
+    fi
+    tar -xzf "$rg_archive" -C "$tools"
+  fi
+  export GROK_SHELL_BUNDLE_RG_PATH="$rg_dir/rg"
+  export GROK_TOOLS_BUNDLE_RG_PATH="$rg_dir/rg"
+  printf 'GROK_SHELL_BUNDLE_RG_PATH=%s\n' "$GROK_SHELL_BUNDLE_RG_PATH"
+  "$GROK_SHELL_BUNDLE_RG_PATH" --version
+fi
+
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  {
+    printf 'PROTOC=%s\n' "$PROTOC"
+    if [[ -n "${GROK_SHELL_BUNDLE_RG_PATH:-}" ]]; then
+      printf 'GROK_SHELL_BUNDLE_RG_PATH=%s\n' "$GROK_SHELL_BUNDLE_RG_PATH"
+      printf 'GROK_TOOLS_BUNDLE_RG_PATH=%s\n' "$GROK_TOOLS_BUNDLE_RG_PATH"
+    fi
+  } >>"$GITHUB_ENV"
+fi

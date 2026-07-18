@@ -23,24 +23,168 @@ Fork-local work tracking. Technical only (no secrets, no client/personal data).
   - Local: `gpg.format=ssh`, `commit.gpgsign=true`, `user.signingkey`
   - Operator-specific setup: **private notes / agent memory only** (not this tree)
 
-## CI / builds
+---
 
-- [x] macOS release workflow builds **this repo** at a chosen `source_ref` (branch / tag / SHA) — not an upstream pin
-- [ ] PR builds on standard GitHub-hosted runners (check/clippy scoped or light matrix) so work does not depend on local monorepo compiles
-- [ ] Shared Actions cache across branches/PRs (deps + target; document what actually hits)
-- [ ] Stay on free GitHub-hosted runner SKUs (no large/self-hosted unless approved)
+## Build model (facts — read this before changing CI)
 
-## Upstream sync (automation)
+### Is this a monolith?
+
+**Yes, one Cargo workspace** (~79 members). Root `Cargo.toml` is **generated** (treat read-only).\
+The ship binary is the **composition root** `xai-grok-pager-bin` → artifact `xai-grok-pager` / `grok`.\
+`cargo build -p xai-grok-pager-bin` does **not** build all 79 crates, but it pulls a **large path-dep closure** (pager, shell, workspace, tools, config, …) plus crates.io. That is why cold builds feel monorepo-slow.
+
+Upstream’s own README: always `cargo check -p <crate>`; full-workspace is slow.
+
+### What is prebuilt vs compiled here?
+
+| Artifact | Source |
+|:--|:--|
+| Rust crates / `xai-grok-pager` | **Built from this tree** every time (no prebuilt app binary in-repo) |
+| [`bin/protoc`](bin/protoc) | DotSlash stub → downloads pinned protoc (not compiled by us) |
+| `ripgrep` in CI release path | Downloaded pinned tarball (bundled into product build env) |
+| Rust toolchain | [`rust-toolchain.toml`](rust-toolchain.toml) via rustup on the runner |
+
+There is **no** “download grok binary and stamp it” path for our release workflow — we compile.
+
+### What must run on macOS?
+
+Only what needs a **Darwin/arm64 link + smoke**:
+
+| Work | Runner |
+|:--|:--|
+| `cargo check` / `clippy` / unit tests (most crates) | **Linux is fine** (and free concurrency is higher) |
+| `cargo build --release` **producing** Mach-O arm64 `xai-grok-pager` | **macOS arm64** hosted (or a Mac self-hosted) |
+| Installer e2e (`uname` Darwin, `file` Mach-O, `otool`) | **macOS** |
+| Pure packaging of an **already-built** artifact | Could be Linux if we only tar + checksum — today smoke assumes Darwin |
+
+We do **not** need macOS to validate every PR. macOS is for **ship binaries** (and optional macOS-specific regressions later).
+
+**Concurrency (public repo, org Team plan):** max **5 concurrent macOS** jobs org-wide; **60** total jobs; public minutes effectively free. Parallelism does not make one release cargo faster — it only helps multiple independent runs.
+
+### Incremental: do we always rebuild everything?
+
+| Layer | Behavior |
+|:--|:--|
+| **Cargo unit graph** | Already incremental: unchanged crates reuse `target/` if the cache is warm |
+| **Our release job (historical)** | Cold or weak cache → feels like full rebuild every dispatch |
+| **`--release` vs `check`** | Release optimizes whole graph (slow); `cargo check` is the PR default |
+| **Workspace-wide** | Never the default for CI; always `-p <crate>` or an **affected** set |
+| **True “only changed crates”** | Needs path filters + `cargo check -p …` list (or a small script); not free magic |
+
+Goal: **PR = Linux + check/clippy + shared caches**. **Release = macOS + release binary**, rare, dispatch-only.
+
+---
+
+## Plan: fast CI (phased)
+
+### Phase A — Trigger UX + lanes (now / next PR)
+
+Split **three lanes** so release never blocks day-to-day work:
+
+| Lane | When | Runner | Goal |
+|:--|:--|:--|:--|
+| **Policy** | every PR / push `main` | ubuntu | identity + commitlint (exists) |
+| **PR rust** | PR (path-filtered) | ubuntu | `cargo check` / later clippy on pager-bin (or affected) |
+| **Release** | `workflow_dispatch` only | macos-26 | `--release` binary + package + optional publish |
+
+- [x] Release builds **this repo** at `source_ref` (branch/tag/SHA) — not upstream pin
+- [x] Document lanes + monolith facts in this ledger
+- [x] Harden [`ci:dispatch`](mise-tasks/ci/dispatch): refuse missing remote SHA, print run URL, optional `--watch`, `--no-package`
+- [x] PR workflow: Linux `cargo check -p xai-grok-pager-bin` + rust cache (not `--release`) — [`.github/workflows/pr.yml`](.github/workflows/pr.yml)
+- [x] Path filters on PR rust (Cargo/crates/mise CI paths)
+- [x] AGENTS: lanes + “never use release workflow for compile-check”
+- [ ] Require PR rust check on Protect main **after** it is green and stable (optional ruleset bump)
+- [ ] First green PR run measured (cold vs warm); tune timeout if needed
+
+### Phase B — Move YAML soup → mise CI config
+
+Huge inline `run: |` blocks are hard to test locally. Target:
+
+- [`mise.toml`](mise.toml) — local/dev tasks (keep)
+- [`mise.ci.toml`](mise.ci.toml) — `MISE_ENV=ci` tasks used by Actions
+- [`mise-tasks/ci/*`](mise-tasks/ci/) — multi-line scripts (tools, package smoke, release build)
+
+- [x] Add `mise.ci.toml` + wire `jdx/mise-action` in workflows
+- [x] Extract **tool bootstrap** (protoc + ripgrep pins) to [`mise-tasks/ci/tools`](mise-tasks/ci/tools)
+- [x] Extract **release build** to `mise run -E ci ci:release-pager`
+- [x] Extract **package + installer smoke** to [`mise-tasks/ci/package-smoke`](mise-tasks/ci/package-smoke)
+- [x] Thin [`.github/workflows/build-macos-arm64.yml`](.github/workflows/build-macos-arm64.yml) + PR workflow toward mise
+- [ ] `workflows:lint` + shellcheck clean on new scripts (CI)
+- [ ] Document: local reproduce `mise run -E ci ci:check-pager` (optional — already in AGENTS Build section)
+
+### Phase C — Caches that actually hit
+
+- [ ] Shared **deps** cache key: `hashFiles('Cargo.lock')` + rust version (OS-specific)
+- [ ] **Target** cache: PR uses softer restore-keys (branch-agnostic prefix); release keys include `SOURCE_SHA` for exact hit
+- [ ] Measure first vs second PR run wall time; note in ledger
+- [ ] Consider `sccache` (optional) if target cache is flaky on macOS size limits (6 GiB save guard already exists)
+- [ ] Document what **does not** cache (toolchain download, protoc zip) and pin those permanently
+
+### Phase D — Incremental / affected crates
+
+- [ ] Script or task: given `git diff --name-only base...HEAD`, map paths → cargo packages (crate root ownership)
+- [ ] PR job: `cargo check -p pkg1 -p pkg2 …` for affected; always include `xai-grok-pager-bin` if any codegen/common in its closure changed (conservative fallback: check pager-bin only)
+- [ ] Optional: `cargo check -p xai-tool-protocol` etc. when only `crates/common/**` changes
+- [ ] Never `cargo check --workspace` on free PR CI unless we introduce a nightly/manual job
+- [ ] Clippy on affected set after check is stable (`-D warnings` may need a grace period)
+
+### Phase E — Faster release binary (macOS only when needed)
+
+- [ ] Keep release **dispatch-only** (no PR `--release`)
+- [ ] Job split: **build** (macOS) → **package** (macOS smoke *or* later Linux-only tar if smoke optional)
+- [ ] Skip package job when `publish=false` and input `package=false` (faster compile-only dispatch)
+- [ ] Revisit `fetch-depth: 0` — only when `source_ref` is a non-tip SHA; branch tips can use depth 1
+- [ ] Cache warm-up workflow (manual) that only builds deps for `pager-bin` on macos-26 / ubuntu
+- [ ] Do **not** matrix macOS × many crates on free tier (5 macOS cap)
+
+### Phase F — Cross-compile research (maybe never)
+
+- [ ] Spike: Linux → `aarch64-apple-darwin` with osxcross / cargo-zigbuild (likely painful, not free-tier friendly)
+- [ ] Decision record: stay on `macos-26` for ship **or** invest in self-hosted Mac
+- [ ] Self-hosted only if operator approves (org policy: free hosted first)
+
+---
+
+## CI / builds (checkbox index)
+
+### Lanes
+
+- [x] macOS release workflow builds **this repo** at chosen `source_ref`
+- [x] Harden `ci:dispatch` (remote exists, URL, `--watch`, `--no-package`)
+- [x] Linux PR `cargo check -p xai-grok-pager-bin` (debug, cached)
+- [x] PR path filters
+- [ ] Optional: PR clippy pager-bin (`ci:clippy-pager` task exists)
+- [ ] Optional: PR `cargo test -p` for small crates only (not full pager e2e)
+- [ ] Stay on free GitHub-hosted SKUs (no large/self-hosted unless approved)
+- [ ] Protect main: add PR rust check name when stable
+
+### mise CI extraction
+
+- [x] `mise.ci.toml` (`MISE_ENV=ci`)
+- [x] `ci:tools` / `ci:check-pager` / `ci:release-pager` / `ci:package-smoke`
+- [x] Workflows call mise; YAML stays mostly orchestration
+- [ ] Further shrink residual YAML (raw staging / publish notes) if desired
+
+### Cache + incremental
+
+- [ ] Shared Actions cache (deps + target); document hit rates
+- [ ] Affected-crate mapping for PR
+- [ ] Release compile-only mode (skip package)
+- [ ] Shallow fetch when building branch tips
+
+### Upstream sync (automation)
 
 Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 
 - [ ] Scheduled (or manual-dispatch) workflow that fetches `upstream/main`, opens a **sync PR** into `main` when behind
   - Prefer fast-forward branch when history allows; otherwise merge/rebase branch + PR (never force-push `main`)
-  - Use `pull_request` path so Policy + future PR CI run
+  - Use `pull_request` path so Policy + PR rust run
   - Label / title convention e.g. `chore(sync): upstream main @ <short-sha>`
   - Do not auto-merge without operator approval
-- [ ] After merge: confirm [`SOURCE_REV`](SOURCE_REV) still matches the public export’s provenance note (file comes from upstream; do not invent SHAs)
+- [ ] After merge: confirm [`SOURCE_REV`](SOURCE_REV) still matches the public export’s provenance note
 - [ ] Optional: notify operator (issue comment only — no secrets/webhooks required for MVP)
+
+---
 
 ## Remote tool execution
 
@@ -56,6 +200,7 @@ Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 - [x] Local overrides in `.gitignore` (`mise.local.toml`, `lefthook-local.yml`, `.envrc.*`, `.env*`, …)
 - [x] `lefthook.yml` thin callers (`commit-msg` commitlint, `post-checkout` worktree setup; identity is CI-only)
 - [x] CI policy workflow (`identity:check` + `commitlint:range`)
+- [ ] `mise.ci.toml` + CI tasks (see Phase B)
 
 ## Docs
 
@@ -66,6 +211,7 @@ Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 - [x] Merge method default + archive/** retention
 - [x] Local tooling (mise/direnv/lefthook) documented in `AGENTS.md`
 - [x] `main` protection + signed-commits plan (public, vendor-neutral)
+- [ ] Document CI lanes (policy / PR rust / release) in `AGENTS.md`
 - [ ] Keep this ledger current
 
 ## Upstream

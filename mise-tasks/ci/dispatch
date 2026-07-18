@@ -4,6 +4,8 @@
 #USAGE flag "--version <version>" default="v0.0.0-vsh.0" help="Release tag (vX.Y.Z-vsh.N)"
 #USAGE flag "--ref <ref>" default="" help="Branch, tag, or commit SHA to BUILD (default: HEAD)"
 #USAGE flag "--workflow-ref <ref>" default="" help="Branch that contains the workflow YAML (default: current branch, else main)"
+#USAGE flag "--watch" help="Watch the run until completion"
+#USAGE flag "--no-package" help="Skip package/installer job (compile-only ship lane)"
 
 set -euo pipefail
 
@@ -14,15 +16,11 @@ source "${root}/mise-tasks/_lib/gh-origin.sh"
 repo=$(origin_name_with_owner)
 ensure_gh_default_origin
 
-# What to compile (branch / tag / full or unique short SHA).
 source_ref=${usage_ref:-}
 if [[ -z "$source_ref" ]]; then
   source_ref=$(git rev-parse HEAD)
 fi
 
-# Which branch GitHub loads the workflow file from (must exist on the remote
-# and contain build-macos-arm64.yml). Distinct from source_ref when you build
-# an arbitrary SHA while the workflow definition lives on main or a PR branch.
 workflow_ref=${usage_workflow_ref:-}
 if [[ -z "$workflow_ref" ]]; then
   workflow_ref=$(git branch --show-current || true)
@@ -36,23 +34,83 @@ if ! [[ "${usage_version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-vsh\.[0-9]+$ ]]; then
   exit 1
 fi
 
+# Fail fast: source must exist on the remote (local-only SHAs waste queue time).
+if ! gh api "repos/${repo}/commits/${source_ref}" --jq .sha >/dev/null 2>&1; then
+  printf 'ci:dispatch: %s has no commit/ref %s on GitHub.\n' "$repo" "$source_ref" >&2
+  printf 'Push the commit/branch first, then re-dispatch.\n' >&2
+  exit 1
+fi
+resolved=$(gh api "repos/${repo}/commits/${source_ref}" --jq .sha)
+printf 'Resolved source: %s → %s\n' "$source_ref" "$resolved"
+
+if ! gh api "repos/${repo}/commits/${workflow_ref}" --jq .sha >/dev/null 2>&1; then
+  printf 'ci:dispatch: workflow-ref %s not found on %s\n' "$workflow_ref" "$repo" >&2
+  exit 1
+fi
+
+publish=false
+if [[ "${usage_publish:-false}" == "true" ]]; then
+  publish=true
+fi
+
+package=true
+if [[ "${usage_no_package:-false}" == "true" ]]; then
+  package=false
+fi
+if [[ "$publish" == "true" && "$package" != "true" ]]; then
+  printf 'ci:dispatch: --publish requires packaging (omit --no-package)\n' >&2
+  exit 1
+fi
+
 args=(
   -f "version=${usage_version}"
   -f "source_ref=${source_ref}"
+  -f "package=${package}"
+  -f "publish=${publish}"
   --ref "$workflow_ref"
 )
-if [[ "${usage_publish:-false}" == "true" ]]; then
-  args+=(-f publish=true)
-else
-  args+=(-f publish=false)
-fi
 
-printf 'Dispatching build-macos-arm64.yml\n'
+printf 'Dispatching build-macos-arm64.yml (SHIP lane — macOS release)\n'
 printf '  repo:          %s\n' "$repo"
-printf '  workflow_ref:  %s  (YAML + Actions UI branch)\n' "$workflow_ref"
-printf '  source_ref:    %s  (what cargo builds)\n' "$source_ref"
-printf '  publish:       %s\n' "${usage_publish:-false}"
+printf '  workflow_ref:  %s  (YAML host branch)\n' "$workflow_ref"
+printf '  source_ref:    %s  (build)\n' "$source_ref"
+printf '  resolved:      %s\n' "$resolved"
+printf '  package:       %s\n' "$package"
+printf '  publish:       %s\n' "$publish"
 printf '  version:       %s\n' "$usage_version"
 
 gh workflow run build-macos-arm64.yml -R "$repo" "${args[@]}"
-gh run list -R "$repo" --workflow=build-macos-arm64.yml --limit 3
+
+run_url=""
+run_id=""
+i=0
+while [[ $i -lt 30 ]]; do
+  i=$((i + 1))
+  # Newest workflow_dispatch run for this workflow.
+  line=$(gh run list -R "$repo" --workflow=build-macos-arm64.yml --limit 1 \
+    --json databaseId,url,event,status \
+    --jq '.[] | select(.event=="workflow_dispatch") | "\(.databaseId)\t\(.url)\t\(.status)"' 2>/dev/null || true)
+  if [[ -n "$line" ]]; then
+    run_id=${line%%$'\t'*}
+    rest=${line#*$'\t'}
+    run_url=${rest%%$'\t'*}
+    break
+  fi
+  sleep 1
+done
+
+if [[ -n "$run_url" ]]; then
+  printf 'Run: %s\n' "$run_url"
+  printf 'id:  %s\n' "$run_id"
+else
+  printf 'Dispatched; could not resolve run URL yet. Try: mise run ci:watch\n' >&2
+  gh run list -R "$repo" --workflow=build-macos-arm64.yml --limit 3
+fi
+
+if [[ "${usage_watch:-false}" == "true" ]]; then
+  if [[ -n "$run_id" ]]; then
+    gh run watch -R "$repo" "$run_id" --exit-status
+  else
+    gh run watch -R "$repo" --exit-status
+  fi
+fi

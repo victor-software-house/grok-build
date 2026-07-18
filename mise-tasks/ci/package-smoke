@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Package the release binary + run install-github-release.sh against a local HTTP server.
+# Expects: SOURCE_SHA, RELEASE_VERSION, CARGO_TARGET_DIR (or raw binary already staged).
+set -euo pipefail
+
+if [[ "$(uname -s)" != Darwin ]] || [[ "$(uname -m)" != arm64 ]]; then
+  printf 'ci:package-smoke: macOS arm64 only\n' >&2
+  exit 1
+fi
+
+: "${SOURCE_SHA:?SOURCE_SHA required}"
+: "${RELEASE_VERSION:?RELEASE_VERSION required}"
+
+if ! [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-vsh\.[0-9]+$ ]]; then
+  printf 'ci:package-smoke: version must match vX.Y.Z-vsh.N (got %s)\n' "$RELEASE_VERSION" >&2
+  exit 1
+fi
+
+root=$(git rev-parse --show-toplevel)
+tmp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+raw="$tmp/raw"
+release_root="$tmp/release"
+package_root_parent="$tmp/package"
+
+if [[ ! -x "$raw/xai-grok-pager" ]]; then
+  artifact="${CARGO_TARGET_DIR:?CARGO_TARGET_DIR or $tmp/raw/xai-grok-pager}/release/xai-grok-pager"
+  mkdir -p "$raw"
+  test -x "$artifact"
+  cp "$artifact" "$raw/xai-grok-pager"
+  "$artifact" --version | tee "$raw/version.txt"
+  "$artifact" --help >"$raw/help.txt"
+  file "$artifact" | tee "$raw/file.txt"
+  otool -L "$artifact" | tee "$raw/otool.txt"
+  shasum -a 256 "$artifact" | tee "$raw/sha256.txt"
+  stat -f '%z bytes' "$artifact" | tee "$raw/size.txt"
+  printf '%s\n' "$SOURCE_SHA" >"$raw/source-commit.txt"
+fi
+
+test "$(cat "$raw/source-commit.txt")" = "$SOURCE_SHA"
+test "$(shasum -a 256 "$raw/xai-grok-pager" | awk '{print $1}')" = \
+  "$(awk '{print $1}' "$raw/sha256.txt")"
+chmod 0755 "$raw/xai-grok-pager"
+file "$raw/xai-grok-pager" | grep -q 'Mach-O 64-bit executable arm64'
+"$raw/xai-grok-pager" --version
+
+version_no_v=${RELEASE_VERSION#v}
+package_name="grok-build-${version_no_v}-macos-arm64"
+package_root="$package_root_parent/$package_name"
+mkdir -p "$package_root" "$release_root"
+cp "$raw/xai-grok-pager" "$package_root/xai-grok-pager"
+cp "$raw/version.txt" "$raw/help.txt" "$raw/file.txt" "$raw/otool.txt" "$raw/size.txt" "$package_root/"
+ln -s xai-grok-pager "$package_root/grok"
+printf '%s\n' "$SOURCE_SHA" >"$package_root/source-commit.txt"
+tar -C "$package_root_parent" -czf "$release_root/$package_name.tar.gz" "$package_name"
+sed "s/__RELEASE_VERSION__/$RELEASE_VERSION/" \
+  "$root/scripts/install-github-release.sh" >"$release_root/install-github-release.sh"
+chmod 0755 "$release_root/install-github-release.sh"
+sh -n "$release_root/install-github-release.sh"
+if grep -q '__RELEASE_VERSION__' "$release_root/install-github-release.sh"; then
+  printf 'Installer version placeholder was not replaced.\n' >&2
+  exit 1
+fi
+(cd "$release_root" && shasum -a 256 "$package_name.tar.gz" >SHA256SUMS)
+
+server_log="$tmp/installer-http.log"
+python3 -m http.server 8765 --bind 127.0.0.1 --directory "$release_root" >"$server_log" 2>&1 &
+server_pid=$!
+trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+sleep 1
+install_prefix="$tmp/install-proof"
+GROK_BUILD_BASE_URL=http://127.0.0.1:8765 \
+  GROK_BUILD_PREFIX="$install_prefix" \
+  sh "$release_root/install-github-release.sh"
+test -x "$install_prefix/bin/xai-grok-pager"
+test "$(readlink "$install_prefix/bin/grok")" = xai-grok-pager
+"$install_prefix/bin/grok" --version
+rm -f "$install_prefix/bin/grok" "$install_prefix/bin/xai-grok-pager"
+test ! -e "$install_prefix/bin/grok"
+test ! -e "$install_prefix/bin/xai-grok-pager"
+kill "$server_pid"
+wait "$server_pid" 2>/dev/null || true
+trap - EXIT
+
+printf 'ci:package-smoke: ok → %s\n' "$release_root"
