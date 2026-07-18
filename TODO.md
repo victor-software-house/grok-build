@@ -226,3 +226,5 @@ Manual FF / sync-PR is documented in [`AGENTS.md`](AGENTS.md). Automate next:
 - [ ] Automate that path — see [Upstream sync (automation)](#upstream-sync-automation)
 
 # merge-lab probe 2026-07-18T03:41:53Z
+
+# gql-only probe 2026-07-18T03:42:29Z
