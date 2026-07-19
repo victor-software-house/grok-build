@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Fail if our commits' author/committer emails are outside commit-email-allowlist"
+#MISE description="Fail if author/committer emails are outside config/commit-email-allowlist"
 #MISE alias="id-check"
 #USAGE arg "[range]" help="git range (default: unpushed commits)" default=""
 
@@ -8,8 +8,8 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 # shellcheck source=../_lib/unpushed-range.sh
 source "${root}/mise-tasks/_lib/unpushed-range.sh"
-# shellcheck source=../_lib/our-commits.sh
-source "${root}/mise-tasks/_lib/our-commits.sh"
+# shellcheck source=../_lib/policy-range.sh
+source "${root}/mise-tasks/_lib/policy-range.sh"
 
 allowlist="${root}/config/commit-email-allowlist"
 [[ -f "$allowlist" ]] || { echo "identity:check: missing $allowlist" >&2; exit 2; }
@@ -45,24 +45,28 @@ if ! git rev-list --count "$range" >/dev/null 2>&1; then
   exit 2
 fi
 
-load_our_email_patterns
-
 total=$(git rev-list --count "$range")
-mapfile -t ours < <(for_our_commits "$range")
-count=${#ours[@]}
-
 if [[ "$total" -eq 0 ]]; then
   echo "identity:check: nothing to check ($range)"
   exit 0
 fi
 
+mapfile -t to_check < <(policy_commits_to_check "$range")
+count=${#to_check[@]}
+if [[ "$count" -eq 1 && -z "${to_check[0]:-}" ]]; then
+  to_check=()
+  count=0
+fi
+
+skipped=$((total - count))
+
 if [[ "$count" -eq 0 ]]; then
-  echo "identity:check: ok (0 our commits of $total in $range; skipped third-party/upstream)"
+  echo "identity:check: ok (0 checked / $total in $range; skipped_upstream=${skipped})"
   exit 0
 fi
 
 bad=0
-for sha in "${ours[@]}"; do
+for sha in "${to_check[@]}"; do
   author=$(git log -1 --format='%ae' "$sha")
   committer=$(git log -1 --format='%ce' "$sha")
   ok=1
@@ -72,9 +76,9 @@ for sha in "${ours[@]}"; do
 done
 
 if [[ "$bad" -gt 0 ]]; then
-  echo "identity:check: $bad commit(s) outside allowlist ($count our / $total in $range)" >&2
-  echo "See config/commit-email-allowlist (only commits matching config/our-commit-emails are checked)" >&2
+  echo "identity:check: $bad commit(s) outside allowlist ($count checked / $total in $range)" >&2
+  echo "See config/commit-email-allowlist" >&2
   exit 1
 fi
 
-echo "identity:check: ok ($count our / $total in $range)"
+echo "identity:check: ok ($count checked / $total in $range; skipped_upstream=${skipped})"
