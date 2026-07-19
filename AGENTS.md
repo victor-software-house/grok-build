@@ -73,15 +73,18 @@ Default branch is **PR-only** (ruleset **Protect main**).
 - Author/committer emails must match allowlist patterns (ruleset + CI)
 - Keep the Policy job `name:` stable — the ruleset binds that exact check context
 
-### Identity
+### Identity + commitlint
 
-Author and committer emails must match [`config/commit-email-allowlist`](config/commit-email-allowlist).
+Normal PRs/pushes: **every** commit in the Policy range must pass identity + Conventional Commits.
+
+**Upstream sync only** (head branch `sync/upstream-<hex>` from our automation): Policy **skips** commits that are ancestors of that upstream tip (imported monorepo history). Still validates our merge/resolution commits on the branch. No email heuristics — branch name is the contract (same as [`upstream:sync`](mise-tasks/upstream/sync)).
 
 | Where | How |
 |:--|:--|
 | **CI** | [`.github/workflows/policy.yml`](.github/workflows/policy.yml) |
-| **Ruleset** | email pattern rules on `main` (must stay aligned with the allowlist) |
-| Local (ad-hoc) | [`mise run identity:check`](mise-tasks/identity/check) |
+| **Ruleset** | email pattern rules on `main` (keep aligned with the allowlist) |
+| Local (ad-hoc) | [`mise run identity:check`](mise-tasks/identity/check) · [`mise run commitlint:range`](mise-tasks/commitlint/range) |
+| Allowlist | [`config/commit-email-allowlist`](config/commit-email-allowlist) |
 
 ### Signed commits (planned)
 

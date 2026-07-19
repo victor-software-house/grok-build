@@ -8,6 +8,8 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 # shellcheck source=../_lib/unpushed-range.sh
 source "${root}/mise-tasks/_lib/unpushed-range.sh"
+# shellcheck source=../_lib/policy-range.sh
+source "${root}/mise-tasks/_lib/policy-range.sh"
 
 allowlist="${root}/config/commit-email-allowlist"
 [[ -f "$allowlist" ]] || { echo "identity:check: missing $allowlist" >&2; exit 2; }
@@ -43,24 +45,40 @@ if ! git rev-list --count "$range" >/dev/null 2>&1; then
   exit 2
 fi
 
-count=$(git rev-list --count "$range")
-if [[ "$count" -eq 0 ]]; then
+total=$(git rev-list --count "$range")
+if [[ "$total" -eq 0 ]]; then
   echo "identity:check: nothing to check ($range)"
   exit 0
 fi
 
+mapfile -t to_check < <(policy_commits_to_check "$range")
+count=${#to_check[@]}
+if [[ "$count" -eq 1 && -z "${to_check[0]:-}" ]]; then
+  to_check=()
+  count=0
+fi
+
+skipped=$((total - count))
+
+if [[ "$count" -eq 0 ]]; then
+  echo "identity:check: ok (0 checked / $total in $range; skipped_upstream=${skipped})"
+  exit 0
+fi
+
 bad=0
-while IFS="$(printf '\t')" read -r sha author committer; do
+for sha in "${to_check[@]}"; do
+  author=$(git log -1 --format='%ae' "$sha")
+  committer=$(git log -1 --format='%ce' "$sha")
   ok=1
   email_ok "$author" || { echo "FAIL $sha author=$author" >&2; ok=0; }
   email_ok "$committer" || { echo "FAIL $sha committer=$committer" >&2; ok=0; }
   [[ "$ok" -eq 0 ]] && bad=$((bad + 1))
-done < <(git log --format='%H%x09%ae%x09%ce' "$range")
+done
 
 if [[ "$bad" -gt 0 ]]; then
-  echo "identity:check: $bad commit(s) outside allowlist ($range)" >&2
+  echo "identity:check: $bad commit(s) outside allowlist ($count checked / $total in $range)" >&2
   echo "See config/commit-email-allowlist" >&2
   exit 1
 fi
 
-echo "identity:check: ok ($count in $range)"
+echo "identity:check: ok ($count checked / $total in $range; skipped_upstream=${skipped})"
