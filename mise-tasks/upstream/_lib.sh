@@ -74,8 +74,11 @@ list_open_sync_prs() {
   # REST only — avoid `gh pr` GraphQL (touches fork parent; xai-org IP allowlist breaks Actions).
   local repo=${1:-$REPO}
   gh api "repos/${repo}/pulls?state=open&per_page=50" \
-    --jq --arg lab "$UPSTREAM_SYNC_LABEL" \
-    '.[] | select([.labels[].name] | index($lab)) | "\(.number)|\(.head.ref)|\(.html_url)|\([.labels[].name] | join(","))"'
+    | jq -r --arg lab "$UPSTREAM_SYNC_LABEL" '
+        .[]
+        | select([.labels[].name] | index($lab))
+        | "\(.number)|\(.head.ref)|\(.html_url)|\([.labels[].name] | join(","))"
+      '
 }
 
 # Parse one list_open_sync_prs line → PR_NUM PR_HEAD PR_URL PR_LABELS
