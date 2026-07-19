@@ -141,6 +141,8 @@ Automation keeps fork `main` current with [`xai-org/grok-build`](https://github.
 
 Merging the *automation* PR does **not** open a product sync PR. That happens on the next successful **Upstream sync** workflow run (schedule or dispatch).
 
+PR create/list/close in automation uses the **REST API** only (not `gh pr` GraphQL), so GitHub Actions does not touch the fork parent (`xai-org` IP allowlist).
+
 **PR policy**
 
 - One PR per upstream tip: branch `sync/upstream-<12-hex>` + label `sync:upstream` (`sync:clean` / `sync:conflict`)
