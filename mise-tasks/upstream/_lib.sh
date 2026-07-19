@@ -71,10 +71,14 @@ source_rev_at() {
 # --- Open sync PR records: number|headRefName|url|labels_csv ---
 
 list_open_sync_prs() {
+  # REST only — avoid `gh pr` GraphQL (touches fork parent; xai-org IP allowlist breaks Actions).
   local repo=${1:-$REPO}
-  gh pr list -R "$repo" --state open --label "$UPSTREAM_SYNC_LABEL" --limit 50 \
-    --json number,headRefName,url,labels \
-    --jq '.[] | "\(.number)|\(.headRefName)|\(.url)|\([.labels[].name] | join(","))"'
+  gh api "repos/${repo}/pulls?state=open&per_page=50" \
+    | jq -r --arg lab "$UPSTREAM_SYNC_LABEL" '
+        .[]
+        | select([.labels[].name] | index($lab))
+        | "\(.number)|\(.head.ref)|\(.html_url)|\([.labels[].name] | join(","))"
+      '
 }
 
 # Parse one list_open_sync_prs line → PR_NUM PR_HEAD PR_URL PR_LABELS
@@ -108,16 +112,26 @@ pr_kind() {
 
 ensure_sync_labels() {
   local repo=${1:-$REPO}
-  gh label create "$UPSTREAM_SYNC_LABEL" -R "$repo" --color "0E8A16" --description "Upstream monorepo sync PR" 2>/dev/null || true
-  gh label create "$UPSTREAM_SYNC_LABEL_CLEAN" -R "$repo" --color "1D76DB" --description "Sync merge is clean" 2>/dev/null || true
-  gh label create "$UPSTREAM_SYNC_LABEL_CONFLICT" -R "$repo" --color "B60205" --description "Sync merge has conflicts — thorough review required" 2>/dev/null || true
+  _ensure_label "$repo" "$UPSTREAM_SYNC_LABEL" "0E8A16" "Upstream monorepo sync PR"
+  _ensure_label "$repo" "$UPSTREAM_SYNC_LABEL_CLEAN" "1D76DB" "Sync merge is clean"
+  _ensure_label "$repo" "$UPSTREAM_SYNC_LABEL_CONFLICT" "B60205" "Sync merge has conflicts — thorough review required"
+}
+
+_ensure_label() {
+  local repo=$1 name=$2 color=$3 desc=$4
+  gh api -X POST "repos/${repo}/labels" \
+    -f name="$name" -f color="$color" -f description="$desc" >/dev/null 2>&1 \
+    || gh api -X PATCH "repos/${repo}/labels/$(printf %s "$name" | jq -sRr @uri)" \
+      -f color="$color" -f description="$desc" >/dev/null 2>&1 \
+    || true
 }
 
 close_pr_with_comment() {
   local number=$1
   local comment=$2
   local repo=${3:-$REPO}
-  gh pr close "$number" -R "$repo" --comment "$comment" >/dev/null
+  gh api "repos/${repo}/issues/${number}/comments" -f body="$comment" >/dev/null
+  gh api -X PATCH "repos/${repo}/pulls/${number}" -f state=closed >/dev/null
 }
 
 # Close open sync PRs matching filter (all|dirty|clean), optionally keeping one number.
@@ -301,13 +315,26 @@ $(git log --oneline "${base}..${tip}" | head -30)
 EOF
 }
 
+_set_pr_labels() {
+  local repo=$1 number=$2 clean=$3
+  # Replace clean/conflict; keep sync:upstream.
+  local labels
+  if [[ "$clean" == "true" ]]; then
+    labels=$(jq -nc --arg a "$UPSTREAM_SYNC_LABEL" --arg b "$UPSTREAM_SYNC_LABEL_CLEAN" '{labels:[$a,$b]}')
+  else
+    labels=$(jq -nc --arg a "$UPSTREAM_SYNC_LABEL" --arg b "$UPSTREAM_SYNC_LABEL_CONFLICT" '{labels:[$a,$b]}')
+  fi
+  # Remove both kind labels then set the set (PUT replaces all issue labels — keep only ours).
+  gh api -X PUT "repos/${repo}/issues/${number}/labels" --input - <<<"$labels" >/dev/null
+}
+
 ensure_pr_for_branch() {
   local branch=$1
   local base_sha=$2
   local tip=$3
   local clean=$4
   local repo=${5:-$REPO}
-  local title body short existing label_args=() l url num
+  local title body short existing num
 
   short=$(upstream_short "$tip")
   title="chore(sync): upstream main @ ${short}"
@@ -318,27 +345,22 @@ ensure_pr_for_branch() {
 
   existing=$(find_open_pr_for_branch "$branch" || true)
   if [[ -n "$existing" ]]; then
-    gh pr edit "$existing" -R "$repo" --title "$title" --body "$body" >/dev/null
-    gh pr edit "$existing" -R "$repo" --remove-label "$UPSTREAM_SYNC_LABEL_CLEAN" 2>/dev/null || true
-    gh pr edit "$existing" -R "$repo" --remove-label "$UPSTREAM_SYNC_LABEL_CONFLICT" 2>/dev/null || true
-    if [[ "$clean" == "true" ]]; then
-      gh pr edit "$existing" -R "$repo" --add-label "$UPSTREAM_SYNC_LABEL_CLEAN" >/dev/null
-    else
-      gh pr edit "$existing" -R "$repo" --add-label "$UPSTREAM_SYNC_LABEL_CONFLICT" >/dev/null
-    fi
+    gh api -X PATCH "repos/${repo}/pulls/${existing}" -f title="$title" -f body="$body" >/dev/null
+    _set_pr_labels "$repo" "$existing" "$clean"
     printf '%s' "$existing"
     return 0
   fi
 
-  label_args=(--label "$UPSTREAM_SYNC_LABEL")
-  if [[ "$clean" == "true" ]]; then
-    label_args+=(--label "$UPSTREAM_SYNC_LABEL_CLEAN")
-  else
-    label_args+=(--label "$UPSTREAM_SYNC_LABEL_CONFLICT")
-  fi
-
-  url=$(gh pr create -R "$repo" --base main --head "$branch" --title "$title" --body "$body" "${label_args[@]}")
-  num=$(gh pr view "$url" -R "$repo" --json number --jq .number)
+  num=$(gh api "repos/${repo}/pulls" \
+    -f title="$title" \
+    -f head="$branch" \
+    -f base=main \
+    -f body="$body" \
+    --jq .number) || {
+    echo "${UPSTREAM_TASK:-upstream}: REST create PR failed for head=${branch}" >&2
+    return 1
+  }
+  _set_pr_labels "$repo" "$num" "$clean"
   printf '%s' "$num"
 }
 
@@ -477,8 +499,12 @@ apply_tip_sync() {
 
   ensure_sync_labels
   push_sync_branch "$TIP_BRANCH" "$TIP_HEAD"
-  tip_pr=$(ensure_pr_for_branch "$TIP_BRANCH" "$BASE" "$UP" "$TIP_CLEAN")
-  echo "  tip PR: #${tip_pr:-?} (${TIP_BRANCH})"
+  tip_pr=$(ensure_pr_for_branch "$TIP_BRANCH" "$BASE" "$UP" "$TIP_CLEAN") || return 1
+  if [[ -z "${tip_pr}" || "$tip_pr" == "?" ]]; then
+    echo "${UPSTREAM_TASK:-upstream}: failed to open/update PR for ${TIP_BRANCH}" >&2
+    return 1
+  fi
+  echo "  tip PR: #${tip_pr} (${TIP_BRANCH})"
 
   short_msg="superseded by #${tip_pr} (\`upstream/main\` @ \`${SHORT}\`, clean=${TIP_CLEAN})"
 
