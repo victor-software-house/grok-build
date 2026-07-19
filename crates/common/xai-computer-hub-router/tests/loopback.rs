@@ -299,9 +299,8 @@ async fn server_disconnect_cleans_registry_and_fails_rebind() {
     // SDK treats "workspace gone" (-32005) on an in-flight call as
     // retryable and parks the caller, which would hang the test. The
     // router-owned cleanup contract is asserted instead: once the
-    // server's SOCKET closes, it leaves discovery and a fresh bind
-    // fails fast. `shutdown()` alone does not close the pooled socket —
-    // every ToolServer clone (including the run-loop task's) must go.
+    // server's socket closes, it leaves discovery and a fresh bind
+    // fails fast.
     deadline(async {
         let Stack {
             server,
@@ -315,26 +314,18 @@ async fn server_disconnect_cleans_registry_and_fails_rebind() {
             .await
             .expect("session_bind_server succeeds");
 
+        // Teardown order matters: shutdown() cancels the borrow token
+        // (server.rs:1731) which makes run() return AND abort its
+        // clone-holding notif/reconnect/session tasks (1607-1611);
+        // aborting the run task instead would leak those clones. Only
+        // after run() returns and the last ToolServer drops does the
+        // pool hold the sole Arc — then one zero-TTL sweep evicts it
+        // and its Drop closes the socket (unshared pools never reap on
+        // their own).
         server.shutdown().await.expect("clean shutdown");
-        drop(server);
-        // Await the aborted run loop so its ToolServer clone is
-        // deterministically destructed before sweeping.
-        _server_loop.abort();
         let _ = _server_loop.await;
-
-        // Unshared pools never reap on their own: once every consumer
-        // Arc is gone (strong_count == 1) a zero-TTL sweep evicts the
-        // pooled connection, and its Drop closes the socket. Bounded
-        // retry only to absorb async teardown stragglers — if eviction
-        // never happens, teardown regressed (fail fast, not at 10s).
-        let mut evicted = 0usize;
-        for _ in 0..20 {
-            evicted = server_pool.sweep_idle(std::time::Duration::ZERO);
-            if evicted > 0 {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
+        drop(server);
+        let evicted = server_pool.sweep_idle(std::time::Duration::ZERO);
         assert_eq!(evicted, 1, "teardown did not release the pooled connection");
 
         // The router observes the socket close asynchronously; poll
