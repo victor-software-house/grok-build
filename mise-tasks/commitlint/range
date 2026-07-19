@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Validate Conventional Commit subjects for unpushed commits"
+#MISE description="Validate Conventional Commit subjects for our commits in a range"
 #USAGE arg "[range]" help="git range (default: unpushed commits)" default=""
 
 set -euo pipefail
@@ -9,6 +9,8 @@ root="$(git rev-parse --show-toplevel)"
 source "${root}/mise-tasks/_lib/unpushed-range.sh"
 # shellcheck source=../_lib/commit-subject.sh
 source "${root}/mise-tasks/_lib/commit-subject.sh"
+# shellcheck source=../_lib/our-commits.sh
+source "${root}/mise-tasks/_lib/our-commits.sh"
 
 # mise sets usage_range; CI/local can pass $1 or COMMITLINT_RANGE.
 range="${usage_range:-${1:-${COMMITLINT_RANGE:-}}}"
@@ -22,20 +24,31 @@ if ! git rev-list --count "$range" >/dev/null 2>&1; then
   exit 2
 fi
 
-count=$(git rev-list --count "$range")
-if [[ "$count" -eq 0 ]]; then
+load_our_email_patterns
+
+total=$(git rev-list --count "$range")
+mapfile -t ours < <(for_our_commits "$range")
+count=${#ours[@]}
+
+if [[ "$total" -eq 0 ]]; then
   echo "commitlint:range: nothing to check ($range)"
   exit 0
 fi
 
+if [[ "$count" -eq 0 ]]; then
+  echo "commitlint:range: ok (0 our commits of $total in $range; skipped third-party/upstream)"
+  exit 0
+fi
+
 bad=0
-while IFS="$(printf '\t')" read -r sha subject; do
+for sha in "${ours[@]}"; do
+  subject=$(git log -1 --format='%s' "$sha")
   validate_subject "$subject" "$sha" || bad=$((bad + 1))
-done < <(git log --format='%H%x09%s' "$range")
+done
 
 if [[ "$bad" -gt 0 ]]; then
-  echo "commitlint:range: $bad commit(s) failed ($range)" >&2
+  echo "commitlint:range: $bad commit(s) failed ($count our / $total in $range)" >&2
   exit 1
 fi
 
-echo "commitlint:range: ok ($count in $range)"
+echo "commitlint:range: ok ($count our / $total in $range)"

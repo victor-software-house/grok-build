@@ -73,15 +73,21 @@ Default branch is **PR-only** (ruleset **Protect main**).
 - Author/committer emails must match allowlist patterns (ruleset + CI)
 - Keep the Policy job `name:` stable — the ruleset binds that exact check context
 
-### Identity
+### Identity + commitlint (our commits only)
 
-Author and committer emails must match [`config/commit-email-allowlist`](config/commit-email-allowlist).
+Policy walks the PR/push range but **only checks commits we authored** — author email matches [`config/our-commit-emails`](config/our-commit-emails) (VSH, `github-actions[bot]`, GitHub web merges).\
+Upstream monorepo subjects like `Synced from monorepo` are **skipped** (so sync PRs do not need `--admin`).
+
+For those “our” commits:
+
+- Author **and** committer emails must match [`config/commit-email-allowlist`](config/commit-email-allowlist)
+- Subject must be Conventional Commits ([`commitlint:range`](mise-tasks/commitlint/range))
 
 | Where | How |
 |:--|:--|
 | **CI** | [`.github/workflows/policy.yml`](.github/workflows/policy.yml) |
-| **Ruleset** | email pattern rules on `main` (must stay aligned with the allowlist) |
-| Local (ad-hoc) | [`mise run identity:check`](mise-tasks/identity/check) |
+| **Ruleset** | email pattern rules on `main` (still apply at merge; keep aligned with the allowlist) |
+| Local (ad-hoc) | [`mise run identity:check`](mise-tasks/identity/check) · [`mise run commitlint:range`](mise-tasks/commitlint/range) |
 
 ### Signed commits (planned)
 
