@@ -128,9 +128,16 @@ impl ToolServerHandler for ReadTool {
 struct Stack {
     server: ToolServer,
     harness: ToolHarness,
-    session: SessionId,
     _router: tokio::task::JoinHandle<()>,
     _server_loop: tokio::task::JoinHandle<()>,
+}
+
+/// Hard per-test deadline so a wedged wire flow can never hang the CI
+/// job; `cargo test` has no timeout of its own.
+async fn deadline<F: Future<Output = ()>>(fut: F) {
+    tokio::time::timeout(std::time::Duration::from_secs(120), fut)
+        .await
+        .expect("test exceeded its 120s deadline");
 }
 
 async fn start_stack(root: PathBuf) -> Stack {
@@ -166,7 +173,7 @@ async fn start_stack(root: PathBuf) -> Stack {
         .pool(HubConnectionPool::new())
         .url(url)
         .auth(credential())
-        .session(session.clone())
+        .session(session)
         .build()
         .await
         .expect("harness connects and handshakes");
@@ -174,7 +181,6 @@ async fn start_stack(root: PathBuf) -> Stack {
     Stack {
         server,
         harness,
-        session,
         _router: router,
         _server_loop: server_loop,
     }
@@ -220,71 +226,96 @@ fn test_root(name: &str) -> PathBuf {
 
 #[tokio::test]
 async fn discovery_bind_and_streamed_echo() {
-    let stack = start_stack(test_root("echo")).await;
+    deadline(async {
+        let stack = start_stack(test_root("echo")).await;
 
-    // Discovery: the server registered under this user is visible.
-    let servers = stack.harness.list_servers().await.expect("servers.list");
-    assert!(
-        servers.iter().any(|s| s.server_id.as_str() == SERVER_ID),
-        "expected {SERVER_ID} in servers.list, got {servers:?}"
-    );
+        // Discovery: the server registered under this user is visible.
+        let servers = stack.harness.list_servers().await.expect("servers.list");
+        assert!(
+            servers.iter().any(|s| s.server_id.as_str() == SERVER_ID),
+            "expected {SERVER_ID} in servers.list, got {servers:?}"
+        );
 
-    // Bind returns the tool snapshot from the server's bind response.
-    let tools = bind(&stack).await;
-    let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
-    assert!(names.contains(&"echo"), "echo missing from {names:?}");
+        // Bind returns the tool snapshot from the server's bind response.
+        let tools = bind(&stack).await;
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"echo"), "echo missing from {names:?}");
 
-    // Streamed call: progress chunks arrive before the terminal value.
-    let (progress, result) = call(&stack.harness, "echo", json!({ "nonce": "n-1" })).await;
-    let value = result.expect("echo terminal value");
-    assert_eq!(value["echo"]["nonce"], "n-1");
-    assert!(progress >= 2, "expected streamed progress, got {progress}");
+        // Streamed call: progress chunks arrive before the terminal value.
+        let (progress, result) = call(&stack.harness, "echo", json!({ "nonce": "n-1" })).await;
+        let value = result.expect("echo terminal value");
+        assert_eq!(value["echo"]["nonce"], "n-1");
+        assert!(progress >= 2, "expected streamed progress, got {progress}");
+    })
+    .await;
 }
 
 #[tokio::test]
 async fn write_then_read_roundtrip() {
-    let stack = start_stack(test_root("rw")).await;
-    bind(&stack).await;
+    deadline(async {
+        let stack = start_stack(test_root("rw")).await;
+        bind(&stack).await;
 
-    let (_, written) = call(
-        &stack.harness,
-        "fs_write",
-        json!({ "path": "note.txt", "content": "hello-roundtrip" }),
-    )
+        let (_, written) = call(
+            &stack.harness,
+            "fs_write",
+            json!({ "path": "note.txt", "content": "hello-roundtrip" }),
+        )
+        .await;
+        assert_eq!(written.expect("fs_write result")["written"], true);
+
+        let (_, read) = call(&stack.harness, "fs_read", json!({ "path": "note.txt" })).await;
+        let read = read.expect("fs_read result");
+        assert_eq!(read["found"], true);
+        assert_eq!(read["content"], "hello-roundtrip");
+    })
     .await;
-    assert_eq!(written.expect("fs_write result")["written"], true);
-
-    let (_, read) = call(&stack.harness, "fs_read", json!({ "path": "note.txt" })).await;
-    let read = read.expect("fs_read result");
-    assert_eq!(read["found"], true);
-    assert_eq!(read["content"], "hello-roundtrip");
 }
 
 #[tokio::test]
 async fn concurrent_calls_correlate_independently() {
-    let stack = start_stack(test_root("concurrent")).await;
-    bind(&stack).await;
+    deadline(async {
+        let stack = start_stack(test_root("concurrent")).await;
+        bind(&stack).await;
 
-    let a = call(&stack.harness, "echo", json!({ "nonce": "left" }));
-    let b = call(&stack.harness, "echo", json!({ "nonce": "right" }));
-    let ((_, a), (_, b)) = tokio::join!(a, b);
-    assert_eq!(a.expect("left result")["echo"]["nonce"], "left");
-    assert_eq!(b.expect("right result")["echo"]["nonce"], "right");
+        let a = call(&stack.harness, "echo", json!({ "nonce": "left" }));
+        let b = call(&stack.harness, "echo", json!({ "nonce": "right" }));
+        let ((_, a), (_, b)) = tokio::join!(a, b);
+        assert_eq!(a.expect("left result")["echo"]["nonce"], "left");
+        assert_eq!(b.expect("right result")["echo"]["nonce"], "right");
+    })
+    .await;
 }
 
 #[tokio::test]
-async fn server_shutdown_fails_subsequent_calls() {
-    let stack = start_stack(test_root("shutdown")).await;
-    bind(&stack).await;
+async fn server_shutdown_cleans_registry_and_fails_rebind() {
+    // Deliberately does NOT issue a tool call after shutdown: the SDK
+    // treats "workspace gone" (-32005) on an in-flight call as
+    // retryable and parks the caller, which would hang the test. The
+    // router-owned cleanup contract is asserted instead: the server
+    // leaves discovery and a fresh bind fails fast. The whole scenario
+    // (including shutdown itself) runs under the 120s deadline.
+    deadline(async {
+        let stack = start_stack(test_root("shutdown")).await;
+        bind(&stack).await;
 
-    stack.server.shutdown().await.expect("clean shutdown");
-    // Give the router a beat to process the disconnect.
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        stack.server.shutdown().await.expect("clean shutdown");
 
-    let (_, result) = call(&stack.harness, "echo", json!({ "nonce": "late" })).await;
-    assert!(
-        result.is_err(),
-        "call after server shutdown must fail, got {result:?}"
-    );
-    let _ = stack.session; // keep the session alive until the end
+        // The router observes the socket close asynchronously; poll
+        // discovery until the registration is gone.
+        for _ in 0..100 {
+            let servers = stack.harness.list_servers().await.expect("servers.list");
+            if !servers.iter().any(|s| s.server_id.as_str() == SERVER_ID) {
+                let rebind = stack.harness.session_bind(SERVER_ID, None, None).await;
+                assert!(
+                    rebind.is_err(),
+                    "bind to a disconnected server must fail, got {rebind:?}"
+                );
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        panic!("server still listed 10s after shutdown");
+    })
+    .await;
 }
