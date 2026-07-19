@@ -288,25 +288,36 @@ async fn concurrent_calls_correlate_independently() {
 }
 
 #[tokio::test]
-async fn server_shutdown_cleans_registry_and_fails_rebind() {
-    // Deliberately does NOT issue a tool call after shutdown: the SDK
-    // treats "workspace gone" (-32005) on an in-flight call as
+async fn server_disconnect_cleans_registry_and_fails_rebind() {
+    // Deliberately does NOT issue a tool call after the disconnect: the
+    // SDK treats "workspace gone" (-32005) on an in-flight call as
     // retryable and parks the caller, which would hang the test. The
-    // router-owned cleanup contract is asserted instead: the server
-    // leaves discovery and a fresh bind fails fast. The whole scenario
-    // (including shutdown itself) runs under the 120s deadline.
+    // router-owned cleanup contract is asserted instead: once the
+    // server's SOCKET closes, it leaves discovery and a fresh bind
+    // fails fast. `shutdown()` alone does not close the pooled socket —
+    // every ToolServer clone (including the run-loop task's) must go.
     deadline(async {
-        let stack = start_stack(test_root("shutdown")).await;
-        bind(&stack).await;
+        let Stack {
+            server,
+            harness,
+            _router,
+            _server_loop,
+        } = start_stack(test_root("shutdown")).await;
+        harness
+            .session_bind(SERVER_ID, None, None)
+            .await
+            .expect("session_bind_server succeeds");
 
-        stack.server.shutdown().await.expect("clean shutdown");
+        server.shutdown().await.expect("clean shutdown");
+        drop(server);
+        _server_loop.abort(); // drop the run loop's ToolServer clone
 
         // The router observes the socket close asynchronously; poll
         // discovery until the registration is gone.
         for _ in 0..100 {
-            let servers = stack.harness.list_servers().await.expect("servers.list");
+            let servers = harness.list_servers().await.expect("servers.list");
             if !servers.iter().any(|s| s.server_id.as_str() == SERVER_ID) {
-                let rebind = stack.harness.session_bind(SERVER_ID, None, None).await;
+                let rebind = harness.session_bind(SERVER_ID, None, None).await;
                 assert!(
                     rebind.is_err(),
                     "bind to a disconnected server must fail, got {rebind:?}"
@@ -315,7 +326,7 @@ async fn server_shutdown_cleans_registry_and_fails_rebind() {
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
-        panic!("server still listed 10s after shutdown");
+        panic!("server still listed 10s after socket teardown");
     })
     .await;
 }
