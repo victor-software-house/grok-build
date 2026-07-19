@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#MISE description="Sync upstream/main into origin via per-tip PRs (default dry-run; --apply or CI writes)"
+#USAGE flag "--apply" help="Push branches and open/close PRs (default: dry-run on laptop)"
+#USAGE flag "--dry-run" help="Force dry-run even when CI=true"
+
+set -euo pipefail
+
+# shellcheck source=./_lib.sh
+source "$(cd "$(dirname "$0")" && pwd)/_lib.sh"
+
+export FORCE_APPLY=false
+export FORCE_DRY_RUN=false
+if [[ "${usage_apply:-false}" == "true" ]]; then
+  FORCE_APPLY=true
+fi
+if [[ "${usage_dry_run:-false}" == "true" ]]; then
+  FORCE_DRY_RUN=true
+fi
+
+run_upstream_sync

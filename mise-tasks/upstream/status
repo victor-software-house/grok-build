@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#MISE description="Diagnostic: upstream vs origin/main, open sync PRs, conflict warnings (read-only)"
+#MISE alias="upstream-status"
+
+set -euo pipefail
+
+# shellcheck source=./_lib.sh
+source "$(cd "$(dirname "$0")" && pwd)/_lib.sh"
+
+run_upstream_status
