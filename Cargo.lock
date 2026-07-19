@@ -12868,6 +12868,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "xai-computer-hub-router"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64",
+ "clap",
+ "futures",
+ "parking_lot",
+ "schemars 1.0.4",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "xai-computer-hub-sdk",
+ "xai-tool-protocol",
+ "xai-tool-runtime",
+ "xai-tool-types",
+]
+
+[[package]]
 name = "xai-computer-hub-sdk"
 version = "0.1.0"
 dependencies = [

@@ -69,6 +69,7 @@ members = [
     "crates/common/xai-circuit-breaker",
     "crates/common/xai-computer-hub-core",
     "crates/common/xai-computer-hub-mcp-adapter",
+    "crates/common/xai-computer-hub-router",
     "crates/common/xai-computer-hub-sdk",
     "crates/common/xai-grok-compaction",
     "crates/common/xai-interjection-core",
