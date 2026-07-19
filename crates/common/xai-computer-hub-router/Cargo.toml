@@ -1,0 +1,40 @@
+# Fork-local crate (victor-software-house/grok-build): not part of the
+# upstream monorepo export. Registered in the generated root Cargo.toml
+# as a deliberate one-line fork divergence.
+[package]
+license = "Apache-2.0"
+name = "xai-computer-hub-router"
+version = "0.1.0"
+edition.workspace = true
+description = "Minimal loopback Computer Hub router: routes tool calls between harness and tool-server connections"
+publish = false
+
+[[bin]]
+name = "grok-hub"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+xai-tool-protocol = { workspace = true }
+
+[dev-dependencies]
+xai-computer-hub-sdk = { workspace = true }
+xai-tool-runtime = { workspace = true }
+xai-tool-types = { workspace = true }
+schemars = { workspace = true }
+async-trait = { workspace = true }
+url = { workspace = true }
+
+[lints]
+workspace = true
