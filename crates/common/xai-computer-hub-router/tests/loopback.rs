@@ -128,6 +128,10 @@ impl ToolServerHandler for ReadTool {
 struct Stack {
     server: ToolServer,
     harness: ToolHarness,
+    /// The server's connection pool. Unshared pools have no idle
+    /// reaper: closing the server's socket requires dropping every
+    /// ToolServer clone AND calling `sweep_idle` here (pool.rs:99-101).
+    server_pool: Arc<HubConnectionPool>,
     _router: tokio::task::JoinHandle<()>,
     _server_loop: tokio::task::JoinHandle<()>,
 }
@@ -151,8 +155,9 @@ async fn start_stack(root: PathBuf) -> Stack {
     });
     let url = url::Url::parse(&format!("ws://{addr}/v1/tools")).expect("valid url");
 
+    let server_pool = HubConnectionPool::new();
     let server = ToolServerBuilder::default()
-        .pool(HubConnectionPool::new())
+        .pool(server_pool.clone())
         .url(url.clone())
         .auth(credential())
         .server_id(ServerId::new(SERVER_ID).expect("valid server id"))
@@ -181,6 +186,7 @@ async fn start_stack(root: PathBuf) -> Stack {
     Stack {
         server,
         harness,
+        server_pool,
         _router: router,
         _server_loop: server_loop,
     }
@@ -300,6 +306,7 @@ async fn server_disconnect_cleans_registry_and_fails_rebind() {
         let Stack {
             server,
             harness,
+            server_pool,
             _router,
             _server_loop,
         } = start_stack(test_root("shutdown")).await;
@@ -310,7 +317,25 @@ async fn server_disconnect_cleans_registry_and_fails_rebind() {
 
         server.shutdown().await.expect("clean shutdown");
         drop(server);
-        _server_loop.abort(); // drop the run loop's ToolServer clone
+        // Await the aborted run loop so its ToolServer clone is
+        // deterministically destructed before sweeping.
+        _server_loop.abort();
+        let _ = _server_loop.await;
+
+        // Unshared pools never reap on their own: once every consumer
+        // Arc is gone (strong_count == 1) a zero-TTL sweep evicts the
+        // pooled connection, and its Drop closes the socket. Bounded
+        // retry only to absorb async teardown stragglers — if eviction
+        // never happens, teardown regressed (fail fast, not at 10s).
+        let mut evicted = 0usize;
+        for _ in 0..20 {
+            evicted = server_pool.sweep_idle(std::time::Duration::ZERO);
+            if evicted > 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert_eq!(evicted, 1, "teardown did not release the pooled connection");
 
         // The router observes the socket close asynchronously; poll
         // discovery until the registration is gone.
@@ -326,7 +351,7 @@ async fn server_disconnect_cleans_registry_and_fails_rebind() {
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
-        panic!("server still listed 10s after socket teardown");
+        panic!("server still listed 10s after socket close");
     })
     .await;
 }
