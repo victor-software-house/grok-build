@@ -192,7 +192,12 @@ Documented in [`AGENTS.md`](AGENTS.md). Implementation:
 - [x] `mise run upstream:sync` — per-tip PRs; laptop dry-run default; `--apply` or CI writes
 - [x] GHA [upstream-sync.yml](.github/workflows/upstream-sync.yml): every **6h** + `workflow_dispatch` → same task
 - [x] PR policy: one PR per tip; max latest **clean** + latest **dirty**; clean closes all; dirty replaces dirty; conflict markers committed; never auto-merge
-- [ ] After operator merge: confirm [`SOURCE_REV`](SOURCE_REV) still matches the public export’s provenance note
+- [x] REST PR create/list/labels/close (GraphQL parent path hits xai-org IP allowlist)
+- [x] Squash-merge → `SOURCE_REV` match counts as integrated (not ancestry alone)
+- [x] Policy: skip upstream subjects only when head is `sync/upstream-*` (not email heuristic)
+- [x] First product tip landed via PR #23 (`7cfcb20` / `SOURCE_REV` `f9736c7b…`); status: **already integrated**
+- [ ] When a new tip lands: operator reviews/merges the sync PR (especially `sync:conflict`); never auto-merge
+- [ ] Optional cleanup: close lab junk PR #18 if still open
 
 ---
 
@@ -222,18 +227,20 @@ Documented in [`AGENTS.md`](AGENTS.md). Implementation:
 - [x] Local tooling (mise/direnv/lefthook) documented in `AGENTS.md`
 - [x] `main` protection + signed-commits plan (public, vendor-neutral)
 - [x] Document CI lanes (policy / PR rust / release) in `AGENTS.md`
-- [ ] Keep this ledger current
+- [x] Upstream sync path documented in `AGENTS.md` + this ledger
+- [ ] Keep this ledger current after each merge wave
 
 ## Upstream
 
 - [x] Automate sync path — see [Upstream sync (automation)](#upstream-sync-automation)
-- [ ] Operator merges sync PRs after thorough review (especially `sync:conflict`)
+- [x] Product tip integrated (`SOURCE_REV` matches; no open `sync:upstream` PR)
+- [ ] Operator merges future sync PRs after review (especially `sync:conflict`)
 
 ---
 
 ## Open backlog (technical)
 
-Items still open. Completed Policy range + `pr:merge` REST gate live on this PR branch (merge to `main` pending).
+Live as of 2026-07-19. Upstream automation + first product sync + Policy skip are **on `main`**.
 
 | Area | Open work | Constraint / note |
 |:--|:--|:--|
@@ -243,9 +250,9 @@ Items still open. Completed Policy range + `pr:merge` REST gate live on this PR 
 | **Incremental** | Path → crate map for affected `cargo check -p …` | Phase D; fallback remains full pager-bin check |
 | **Release** | Shallow `fetch-depth` for branch tips; optional warm-up workflow | Phase E remainder; `package=false` path already exists |
 | **YAML** | Further shrink residual inline steps in release workflow | Staging/publish notes still in YAML |
-| **Lab** | Keep `sandbox/merge-lab` + ruleset **Protect sandbox/merge-lab** for merge/CI experiments | Not a production branch; not `main` |
-| **Upstream** | Operator review/merge of sync PRs; optional post-merge `SOURCE_REV` check | Automation: `upstream:status` / `upstream:sync` + 6h workflow; never auto-merge |
+| **Lab** | Close or keep PR #18 (`exp/pr-merge-rest`); sandbox ruleset stays for experiments | Not a production branch; not `main` |
+| **Upstream** | Wait for next `upstream/main` tip → review/merge sync PR | 6h cron + `upstream:dispatch`; never auto-merge |
 | **Product** | Remote tool daemon MVP (RPC, loopback tests, bootstrap without secrets) | Prefer existing tool-protocol/runtime crates |
 | **Signing** | SSH commit signing → GitHub Verified → then `required_signatures` on Protect main | Operator machine config stays out of this tree |
-| **Repo topology** | Detach public fork → non-fork remote (deferred) | Cosmetic/parent-default issue; does not fix `gh pr merge` preflight |
+| **Repo topology** | Detach public fork → non-fork remote (deferred) | Cosmetic/parent-default issue; REST PR path already works |
 | **Upstream CLI** | Track [cli/cli#13388](https://github.com/cli/cli/issues/13388) | Local workaround: check-runs gate + REST merge; `--admin` break-glass only |
