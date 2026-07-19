@@ -68,6 +68,25 @@ source_rev_at() {
   git show "${1}:SOURCE_REV" 2>/dev/null | tr -d '[:space:]' || true
 }
 
+# True when upstream tip is already on origin/main for our purposes.
+# Squash-merge of a sync PR does NOT keep upstream commits as ancestors, so
+# ancestry alone is insufficient — matching SOURCE_REV means the monorepo
+# export is already integrated (fork-only files may still differ).
+upstream_already_integrated() {
+  local base=${1:-$BASE}
+  local up=${2:-$UP}
+  if is_ancestor "$up" "$base"; then
+    return 0
+  fi
+  local base_sr up_sr
+  base_sr=$(source_rev_at "$base")
+  up_sr=$(source_rev_at "$up")
+  if [[ -n "$base_sr" && -n "$up_sr" && "$base_sr" == "$up_sr" ]]; then
+    return 0
+  fi
+  return 1
+}
+
 # --- Open sync PR records: number|headRefName|url|labels_csv ---
 
 list_open_sync_prs() {
@@ -525,8 +544,12 @@ run_upstream_status() {
   echo "upstream:status"
   print_tip_header
 
-  if is_ancestor "$UP" "$BASE"; then
-    echo "  state: already integrated (upstream/main ⊆ origin/main)"
+  if upstream_already_integrated "$BASE" "$UP"; then
+    if is_ancestor "$UP" "$BASE"; then
+      echo "  state: already integrated (upstream/main ⊆ origin/main)"
+    else
+      echo "  state: already integrated (SOURCE_REV match; history may be squash-only)"
+    fi
   else
     echo "  divergence: origin ahead=$(git rev-list --count "${UP}..${BASE}") behind=$(git rev-list --count "${BASE}..${UP}") (vs upstream tip)"
     echo "  upstream-only:"
@@ -548,12 +571,12 @@ run_upstream_status() {
     echo "  WARNING: ${OPEN_COUNT} open sync PRs (policy cap is 2). Run: mise run upstream:sync -- --apply"
   fi
 
-  if ! is_ancestor "$UP" "$BASE"; then
+  if ! upstream_already_integrated "$BASE" "$UP"; then
     if merge_probe_clean "$BASE" "$UP"; then
       echo "  probe: merge of upstream/main onto origin/main is CLEAN"
     else
       echo "  probe: merge of upstream/main onto origin/main has CONFLICTS"
-      echo "         (open a dirty PR via: mise run upstream:sync -- --apply)"
+      echo "         (open a dirty PR via: mise run upstream:dispatch)"
     fi
   fi
 
@@ -580,12 +603,12 @@ run_upstream_sync() {
   echo "  upstream/main: ${UP} (${SHORT})"
   echo "  branch:        ${BRANCH}"
 
-  if is_ancestor "$UP" "$BASE"; then
+  if upstream_already_integrated "$BASE" "$UP"; then
     echo "  already integrated — would close all open sync PRs"
     if [[ "$mode" == "apply" ]]; then
       ensure_sync_labels
       close_all_sync_prs \
-        "Closed by upstream:sync: \`upstream/main\` (\`${SHORT}\`) is already contained in \`main\`."
+        "Closed by upstream:sync: \`upstream/main\` (\`${SHORT}\`) already integrated (ancestor or matching SOURCE_REV)."
     fi
     echo "  done"
     return 0
