@@ -43,6 +43,8 @@ jobs:
           git config user.name "github-actions[bot]"
 
       - name: Ensure origin remote + fetch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
