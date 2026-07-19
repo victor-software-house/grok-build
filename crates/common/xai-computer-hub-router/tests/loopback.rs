@@ -133,7 +133,7 @@ struct Stack {
     /// ToolServer clone AND calling `sweep_idle` here (pool.rs:99-101).
     server_pool: Arc<HubConnectionPool>,
     _router: tokio::task::JoinHandle<()>,
-    _server_loop: tokio::task::JoinHandle<()>,
+    _server_loop: tokio::task::JoinHandle<Result<(), xai_computer_hub_sdk::ClientError>>,
 }
 
 /// Hard per-test deadline so a wedged wire flow can never hang the CI
@@ -169,9 +169,7 @@ async fn start_stack(root: PathBuf) -> Stack {
         .await
         .expect("tool server connects and handshakes");
     let server_for_loop = server.clone();
-    let server_loop = tokio::spawn(async move {
-        let _ = server_for_loop.run().await;
-    });
+    let server_loop = tokio::spawn(async move { server_for_loop.run().await });
 
     let session = SessionId::new(format!("sess-{}", uuid::Uuid::new_v4())).expect("valid session");
     let harness = ToolHarnessBuilder::default()
@@ -323,7 +321,10 @@ async fn server_disconnect_cleans_registry_and_fails_rebind() {
         // and its Drop closes the socket (unshared pools never reap on
         // their own).
         server.shutdown().await.expect("clean shutdown");
-        let _ = _server_loop.await;
+        _server_loop
+            .await
+            .expect("run task joins")
+            .expect("run() exits cleanly after shutdown");
         drop(server);
         let evicted = server_pool.sweep_idle(std::time::Duration::ZERO);
         assert_eq!(evicted, 1, "teardown did not release the pooled connection");
