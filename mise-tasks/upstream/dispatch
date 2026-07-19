@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#MISE description="Dispatch Upstream sync workflow on origin (preferred apply path; not local --apply)"
+#USAGE flag "--watch" help="Watch the run until completion"
+#USAGE flag "--ref <ref>" default="main" help="Branch that hosts upstream-sync.yml (default: main)"
+
+set -euo pipefail
+
+# shellcheck source=./_lib.sh
+source "$(cd "$(dirname "$0")" && pwd)/_lib.sh"
+
+upstream_bootstrap "upstream:dispatch"
+
+ref=${usage_ref:-main}
+workflow=upstream-sync.yml
+
+echo "upstream:dispatch"
+echo "  repo:     ${REPO}"
+echo "  workflow: ${workflow}"
+echo "  ref:      ${ref}"
+echo "  (remote apply via CI — prefer this over: mise run upstream:sync -- --apply)"
+
+gh workflow run "$workflow" -R "$REPO" --ref "$ref"
+
+run_url=""
+run_id=""
+i=0
+while [[ $i -lt 30 ]]; do
+  i=$((i + 1))
+  line=$(gh run list -R "$REPO" --workflow="$workflow" --limit 3 \
+    --json databaseId,url,event,status \
+    --jq '.[] | select(.event=="workflow_dispatch") | "\(.databaseId)\t\(.url)\t\(.status)"' \
+    2>/dev/null | head -1 || true)
+  if [[ -n "$line" ]]; then
+    run_id=${line%%$'\t'*}
+    rest=${line#*$'\t'}
+    run_url=${rest%%$'\t'*}
+    break
+  fi
+  sleep 1
+done
+
+if [[ -n "$run_url" ]]; then
+  echo "  run: ${run_url}"
+  echo "  id:  ${run_id}"
+else
+  echo "  dispatched; resolve with: gh run list -R ${REPO} --workflow=${workflow}" >&2
+fi
+
+if [[ "${usage_watch:-false}" == "true" ]]; then
+  if [[ -n "$run_id" ]]; then
+    gh run watch -R "$REPO" "$run_id" --exit-status
+  else
+    gh run watch -R "$REPO" --exit-status
+  fi
+  echo "  next: mise run upstream:status"
+fi

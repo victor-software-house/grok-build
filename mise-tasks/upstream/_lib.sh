@@ -531,9 +531,10 @@ run_upstream_status() {
     fi
   fi
 
-  echo "  next: mise run upstream:sync            # dry-run plan"
-  echo "        mise run upstream:sync -- --apply # push/open/close PRs"
-  echo "        (CI / GITHUB_ACTIONS applies automatically)"
+  echo "  next: mise run upstream:dispatch [-- --watch]  # preferred apply (remote CI)"
+  echo "        mise run upstream:sync                   # local dry-run plan only"
+  echo "        mise run upstream:sync -- --apply        # break-glass local write"
+  echo "  schedule: Upstream sync workflow every 6h UTC (00/06/12/18) — does not run on merge of automation alone"
 }
 
 run_upstream_sync() {
@@ -582,7 +583,8 @@ run_upstream_sync() {
     fi
     echo "  currently open:"
     print_open_sync_prs "    "
-    echo "  re-run with: mise run upstream:sync -- --apply"
+    echo "  preferred apply: mise run upstream:dispatch [-- --watch]"
+    echo "  break-glass:     mise run upstream:sync -- --apply"
     return 0
   fi
 

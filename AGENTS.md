@@ -123,11 +123,23 @@ Mise tasks that call `gh` pass `-R` for **origin** so they stay correct even if 
 
 Automation keeps fork `main` current with [`xai-org/grok-build`](https://github.com/xai-org/grok-build) via **review-gated PRs** (never auto-merge).
 
+**Operator order (prefer remote apply)**
+
+1. **Check** — [`mise run upstream:status`](mise-tasks/upstream/status) (read-only; no PR opens by itself)
+2. **Apply remotely** — [`mise run upstream:dispatch`](mise-tasks/upstream/dispatch) (`workflow_dispatch` on origin) or wait for the **6h** schedule\
+   Do **not** default to local `upstream:sync -- --apply` (pushes from your laptop). Prefer GitHub Actions.
+3. **Review** the product sync PR(s) — especially `sync:conflict` (conflict markers are intentional)
+4. **Merge** only after approval — [`mise run pr:merge -- <N>`](mise-tasks/pr/merge) → [`mise run main:sync`](mise-tasks/main/sync)
+
 | | |
 |:--|:--|
-| Diagnostic | [`mise run upstream:status`](mise-tasks/upstream/status) |
-| Plan / apply | [`mise run upstream:sync`](mise-tasks/upstream/sync) (laptop **dry-run** by default; `--apply` to write) |
-| Scheduled | [`.github/workflows/upstream-sync.yml`](.github/workflows/upstream-sync.yml) every **6h** UTC + `workflow_dispatch` — runs the same task with `CI=true` (applies) |
+| Diagnostic | [`upstream:status`](mise-tasks/upstream/status) — tips, open sync PRs, probe (never writes) |
+| **Preferred apply** | [`upstream:dispatch`](mise-tasks/upstream/dispatch) — remote `workflow_dispatch` (`--watch` optional) |
+| Scheduled apply | [`.github/workflows/upstream-sync.yml`](.github/workflows/upstream-sync.yml) — cron `0 */6 * * *` UTC (00/06/12/18) + dispatch |
+| Local dry-run | [`upstream:sync`](mise-tasks/upstream/sync) — plan only (default) |
+| Local apply | `mise run upstream:sync -- --apply` — **break-glass** only (same logic as CI) |
+
+Merging the *automation* PR does **not** open a product sync PR. That happens on the next successful **Upstream sync** workflow run (schedule or dispatch).
 
 **PR policy**
 
@@ -136,7 +148,6 @@ Automation keeps fork `main` current with [`xai-org/grok-build`](https://github.
 - New **clean** tip closes all other sync PRs; new **dirty** replaces only the previous dirty
 - Conflicts are **committed with markers** so the diff is reviewable — **thorough review required** before merge
 - Same tip after `main` moves: force-with-lease the same branch (same PR)
-- Merge only after review: [`mise run pr:merge -- <N>`](mise-tasks/pr/merge), then [`mise run main:sync`](mise-tasks/main/sync)
 
 After merge, confirm [`SOURCE_REV`](SOURCE_REV) matches the intended upstream snapshot.
 
@@ -145,8 +156,8 @@ Do not force-push `main` unless the operator allows it and org rules permit it.
 
 ```sh
 mise run upstream:status
-git fetch upstream origin
-git log --oneline origin/main..upstream/main
+mise run upstream:dispatch -- --watch   # preferred apply
+# break-glass only: mise run upstream:sync -- --apply
 ```
 
 ---
@@ -203,7 +214,8 @@ Release input `source_ref` = branch/tag/SHA; `ci:dispatch --ref` sets it; `--wor
 | [`pr:merge -- <N>`](mise-tasks/pr/merge) | Check-gated REST merge (`--squash` / `--merge-commit` / break-glass `--admin`) |
 | [`main:sync`](mise-tasks/main/sync) | After merge: update `main` and drop locals whose remote is gone |
 | [`upstream:status`](mise-tasks/upstream/status) | Read-only: origin vs upstream tips, open sync PRs, conflict warnings |
-| [`upstream:sync`](mise-tasks/upstream/sync) | Open/update/close upstream sync PRs (dry-run default; `--apply` or CI writes) |
+| [`upstream:dispatch`](mise-tasks/upstream/dispatch) | **Preferred apply:** `workflow_dispatch` Upstream sync on origin |
+| [`upstream:sync`](mise-tasks/upstream/sync) | Dry-run plan (default); `--apply` is break-glass local write |
 | [`ci:dispatch`](mise-tasks/ci/dispatch) / [`ci:watch`](mise-tasks/ci/watch) | Ship lane: `--ref`, `--workflow-ref`, `--no-package`, `--publish`, `--version`, `--watch` |
 | `workflows:lint` | Lint workflows with actionlint |
 | `hooks:install` / [`worktree:setup`](mise-tasks/worktree/setup) | Install lefthook; set up a linked worktree |
