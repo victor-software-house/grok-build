@@ -401,10 +401,20 @@ async fn cancel_before_task_completion_defers_auto_wake_until_user_prompt() {
     harness
         .wait_for_full_text("Task completed in", Duration::from_secs(15))
         .expect("background completion chip");
+<<<<<<< HEAD
     harness
         .wait_until_stable(
             "no auto-wake response after background completion",
             Duration::from_secs(2),
+=======
+    // hold must be strictly less than timeout: wait_until_stable stamps
+    // true_since after the deadline is fixed, so timeout == hold flakes under
+    // load even when the condition is always true (remote --runs_per_test).
+    harness
+        .wait_until_stable(
+            "no auto-wake response after background completion",
+            Duration::from_secs(5),
+>>>>>>> ba76b0a683fa52e4e60685017b85905451be17bc
             Duration::from_secs(2),
             |h| !h.contains_full_text(UNWANTED_AUTO_WAKE_SENTINEL),
         )
@@ -443,7 +453,11 @@ async fn cancel_before_task_completion_defers_auto_wake_until_user_prompt() {
     harness
         .wait_until_stable(
             "no second completion request after the user turn",
+<<<<<<< HEAD
             Duration::from_secs(2),
+=======
+            Duration::from_secs(5),
+>>>>>>> ba76b0a683fa52e4e60685017b85905451be17bc
             Duration::from_secs(2),
             |_| {
                 content
