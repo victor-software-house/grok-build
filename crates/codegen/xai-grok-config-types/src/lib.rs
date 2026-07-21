@@ -229,6 +229,13 @@ pub struct RemoteSettings {
     pub non_git_workspace_capture: Option<bool>,
     #[serde(default)]
     pub login_shell_capture: Option<bool>,
+<<<<<<< HEAD
+=======
+    /// When `Some(false)`, scheduled task fires run as main-conversation
+    /// turns instead of background subagents.
+    #[serde(default)]
+    pub scheduler_background_loops: Option<bool>,
+>>>>>>> a881e6703f46b01d8c7d4a5437683546df30449d
     /// Release channel: `"stable"` or `"alpha"`.
     /// Fallback when no local `[cli] channel` or `--alpha`/`--stable` flag is set.
     #[serde(default)]

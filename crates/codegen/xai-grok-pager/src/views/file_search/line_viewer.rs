@@ -1146,7 +1146,17 @@ fn highlight_to_ratatui_line(
         if piece.is_empty() {
             continue;
         }
+<<<<<<< HEAD
         let fg = syntect_to_ratatui_color(style.foreground);
+=======
+        // Shared path: polarity-safe under the terminal-native lock, else
+        // normal theme quantize (see xai_grok_pager_render::syntax).
+        let fg = crate::syntax::syntect_rgb_to_fg(
+            style.foreground.r,
+            style.foreground.g,
+            style.foreground.b,
+        );
+>>>>>>> a881e6703f46b01d8c7d4a5437683546df30449d
         spans.push(Span::styled(piece, Style::default().fg(fg)));
     }
 
@@ -1154,13 +1164,6 @@ fn highlight_to_ratatui_line(
         return Line::from(" ".to_owned());
     }
     Line::from(spans)
-}
-
-/// Convert a syntect RGBA color to a ratatui Color.
-///
-/// Quantizes the RGB value to the terminal's supported color level.
-fn syntect_to_ratatui_color(c: syntect::highlighting::Color) -> ratatui::style::Color {
-    crate::theme::quantize(ratatui::style::Color::Rgb(c.r, c.g, c.b))
 }
 
 /// Count digits in a number (for line number padding).
