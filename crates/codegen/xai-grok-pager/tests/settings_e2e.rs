@@ -33,6 +33,10 @@ const ALL_SETTINGS_EXERCISED: &[&str] = &[
     "show_timestamps",
     "show_timeline",
     "page_flip_on_send",
+<<<<<<< HEAD
+=======
+    "combine_queued_prompts",
+>>>>>>> 3af4d5d39897855bdcc74f23e690024a5dc05573
     "simple_mode",
     "vim_mode",
     "remember_tool_approvals",
@@ -213,6 +217,15 @@ fn assert_set_bool_action(outcome: SettingsKeyOutcome, key: &str, expected: bool
         ("page_flip_on_send", Action::SetPageFlipOnSend(b)) => {
             assert_eq!(b, expected, "SetPageFlipOnSend value differs from expected")
         }
+<<<<<<< HEAD
+=======
+        ("combine_queued_prompts", Action::SetCombineQueuedPrompts(b)) => {
+            assert_eq!(
+                b, expected,
+                "SetCombineQueuedPrompts value differs from expected"
+            )
+        }
+>>>>>>> 3af4d5d39897855bdcc74f23e690024a5dc05573
         ("simple_mode", Action::SetSimpleMode(b)) => {
             assert_eq!(b, expected, "SetSimpleMode value differs from expected")
         }
@@ -384,6 +397,18 @@ fn space_on_page_flip_on_send_dispatches_typed_setter() {
 }
 
 #[test]
+<<<<<<< HEAD
+=======
+fn space_on_combine_queued_prompts_dispatches_typed_setter() {
+    let mut s = make_state();
+    navigate_to(&mut s, "combine_queued_prompts");
+    let outcome = handle_settings_key(&mut s, &press(KeyCode::Char(' ')));
+    let default_on = UiConfig::default().combine_queued_prompts.unwrap_or(false);
+    assert_set_bool_action(outcome, "combine_queued_prompts", !default_on);
+}
+
+#[test]
+>>>>>>> 3af4d5d39897855bdcc74f23e690024a5dc05573
 fn space_on_simple_mode_dispatches_typed_setter() {
     let mut s = make_state();
     navigate_to(&mut s, "simple_mode");
@@ -632,6 +657,24 @@ fn mouse_click_on_page_flip_on_send_indicator_toggles_in_one_click() {
     assert_set_bool_action(outcome, "page_flip_on_send", !default_on);
 }
 
+<<<<<<< HEAD
+=======
+#[test]
+fn mouse_click_on_combine_queued_prompts_indicator_toggles_in_one_click() {
+    let mut s = make_state();
+    synth_rects(&mut s);
+    let row_y = row_idx_for(&s, "combine_queued_prompts") as u16;
+    let outcome = handle_settings_mouse(
+        &mut s,
+        MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        72,
+        row_y,
+    );
+    let default_on = UiConfig::default().combine_queued_prompts.unwrap_or(false);
+    assert_set_bool_action(outcome, "combine_queued_prompts", !default_on);
+}
+
+>>>>>>> 3af4d5d39897855bdcc74f23e690024a5dc05573
 /// Value-column click toggles `remember_tool_approvals` in one click.
 #[test]
 fn mouse_click_on_remember_tool_approvals_indicator_toggles_in_one_click() {
@@ -1759,6 +1802,10 @@ fn registry_kind_membership_through_pr_14() {
             "show_timeline",
             "show_timestamps",
             "page_flip_on_send",
+<<<<<<< HEAD
+=======
+            "combine_queued_prompts",
+>>>>>>> 3af4d5d39897855bdcc74f23e690024a5dc05573
             "simple_mode",
             "vim_mode",
             "remember_tool_approvals",
@@ -1891,6 +1938,10 @@ fn defaults_round_trip_through_registry() {
     xai_grok_pager::appearance::cache::set_prompt_suggestions(true);
     xai_grok_pager::appearance::cache::set_group_tool_verbs(true);
     xai_grok_pager::appearance::cache::set_page_flip_on_send(true);
+<<<<<<< HEAD
+=======
+    xai_grok_pager::appearance::cache::set_combine_queued_prompts(false);
+>>>>>>> 3af4d5d39897855bdcc74f23e690024a5dc05573
     xai_grok_pager::appearance::cache::set_scroll_mode(
         xai_grok_pager::appearance::ScrollMode::Auto,
     );
@@ -1906,6 +1957,10 @@ fn defaults_round_trip_through_registry() {
             "show_timestamps" => SettingValue::Bool(true),
             "show_timeline" => SettingValue::Bool(false),
             "page_flip_on_send" => SettingValue::Bool(true),
+<<<<<<< HEAD
+=======
+            "combine_queued_prompts" => SettingValue::Bool(false),
+>>>>>>> 3af4d5d39897855bdcc74f23e690024a5dc05573
             "simple_mode" => SettingValue::Bool(true),
             "vim_mode" => SettingValue::Bool(false),
             "remember_tool_approvals" => SettingValue::Bool(false),
@@ -2004,6 +2059,10 @@ fn settings_value_payload_matches_kind() {
             | SettingsKeyOutcome::Action(Action::SetTimestamps(_))
             | SettingsKeyOutcome::Action(Action::SetTimeline(_))
             | SettingsKeyOutcome::Action(Action::SetPageFlipOnSend(_))
+<<<<<<< HEAD
+=======
+            | SettingsKeyOutcome::Action(Action::SetCombineQueuedPrompts(_))
+>>>>>>> 3af4d5d39897855bdcc74f23e690024a5dc05573
             | SettingsKeyOutcome::Action(Action::SetSimpleMode(_))
             | SettingsKeyOutcome::Action(Action::SetMultilineMode(_))
             | SettingsKeyOutcome::Action(Action::SetVimMode(_))

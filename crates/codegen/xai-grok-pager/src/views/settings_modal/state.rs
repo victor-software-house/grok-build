@@ -853,6 +853,10 @@ pub(super) fn action_for_bool(key: SettingKey, new: bool) -> Option<Action> {
         "prompt_suggestions" => Some(Action::SetPromptSuggestions(new)),
         "respect_manual_folds" => Some(Action::SetRespectManualFolds(new)),
         "page_flip_on_send" => Some(Action::SetPageFlipOnSend(new)),
+<<<<<<< HEAD
+=======
+        "combine_queued_prompts" => Some(Action::SetCombineQueuedPrompts(new)),
+>>>>>>> 3af4d5d39897855bdcc74f23e690024a5dc05573
         "invert_scroll" => Some(Action::SetInvertScroll(new)),
         "show_tips" => Some(Action::SetShowTips(new)),
         "auto_update" => Some(Action::SetAutoUpdate(new)),
