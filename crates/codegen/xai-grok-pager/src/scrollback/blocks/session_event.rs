@@ -314,8 +314,9 @@ pub struct SessionEventBlock {
     pub prompt_id: Option<String>,
     /// The marker was pushed at park time (user-interruptible blocking
     /// wait): the turn is still running shell-side, so it must never accept
-    /// stop hooks. Rendering is unchanged — a parked wait reads as stopped —
-    /// and the real completion still prints its own marker.
+    /// stop hooks. Rendering is unchanged — a parked wait reads as stopped.
+    /// Cleared when the completion folds into the uncommitted tail marker;
+    /// a committed tail (minimal print-once) gets a fresh row instead.
     pub parked: bool,
 }
 
@@ -1377,7 +1378,11 @@ mod tests {
     #[test]
     fn parked_marker_output_reads_as_plain_completed_marker() {
         // The parked marker renders the plain event text — still-running
+<<<<<<< HEAD
         // background work is the status row's "watching · …" cue, never a
+=======
+        // background work is the status row's "… still running" cue, never a
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
         // transcript suffix.
         let block = parked_marker();
         let out = block.output(&ctx());

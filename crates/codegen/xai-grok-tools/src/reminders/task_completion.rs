@@ -596,6 +596,7 @@ pub fn consumed_completion_ids(output: &ToolOutput) -> Vec<&str> {
         | ToolOutput::SchedulerDelete(_)
         | ToolOutput::SchedulerList(_)
         | ToolOutput::UpdateGoal(_)
+        | ToolOutput::Workflow(_)
         | ToolOutput::ImageGen(_)
         | ToolOutput::ImageToVideo(_)
         | ToolOutput::ReferenceToVideo(_)
@@ -642,11 +643,18 @@ impl Reminder for TaskCompletionReminder {
             .chain(&reserved_ids)
             .cloned()
             .collect::<Vec<_>>();
+<<<<<<< HEAD
         let (terminal, event_sender) = {
+=======
+        let (terminal, event_sender, session_id) = {
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
             let res = resources.lock().await;
             (
                 res.get::<Terminal>().map(|t| t.0.clone()),
                 res.get::<SubagentEventSender>().cloned(),
+                res.get::<crate::implementations::grok_build::task::types::SessionIdResource>()
+                    .map(|s| s.0.clone())
+                    .unwrap_or_default(),
             )
         };
         let mut reminders = Vec::new();
@@ -729,6 +737,10 @@ impl Reminder for TaskCompletionReminder {
             if sender
                 .0
                 .send(SubagentEvent::Completions(SubagentCompletionsRequest {
+<<<<<<< HEAD
+=======
+                    session_id,
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
                     suppress_ids,
                     respond_to: tx,
                 }))
@@ -1433,6 +1445,7 @@ mod tests {
     fn make_subagent_completion(id: &str, success: bool) -> SubagentCompletionSummary {
         SubagentCompletionSummary {
             subagent_id: id.into(),
+            owner_session_id: String::new(),
             subagent_type: "general-purpose".into(),
             description: "test task".into(),
             success,
@@ -1914,8 +1927,9 @@ mod tests {
             "batch must lead with event + monitor counts and default tool hint: {batched}"
         );
         assert!(
-            batched
-            .contains("<monitor description=\"alpha\" task_id=\"task-0\">\n[1] a first\n[2] a second\n</monitor>"),
+            batched.contains(
+                "<monitor description=\"alpha\" task_id=\"task-0\">\n[1] a first\n[2] a second\n</monitor>"
+            ),
             "task-0 group: description once on the tag, ordinal tick labels: {batched}"
         );
         assert!(

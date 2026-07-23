@@ -1,15 +1,36 @@
 //! Heap-leak test for the session lifecycle: create and remove many sessions,
 //! then fail if heap memory grows per session. Run:
+<<<<<<< HEAD
 //!     leader_session_lifecycle_heap_steady_state -- --ignored --nocapture
 use super::*;
 use xai_grok_workspace::permission::PermissionEvent;
 const MAX_BLOCKS_PER_SESSION: f64 = 0.5;
 const MAX_BYTES_PER_SESSION: f64 = 1024.0;
+=======
+//!   cargo test -p xai-grok-shell --features dhat-heap \
+//!     leader_session_lifecycle_heap_steady_state -- --ignored --nocapture
+use super::*;
+use xai_grok_workspace::permission::PermissionEvent;
+
+// Chosen between a healthy build (about zero retained allocations per
+// session) and the smallest deliberately introduced leak (one per session);
+// re-tune if healthy runs drift toward the limits.
+const MAX_BLOCKS_PER_SESSION: f64 = 0.5;
+const MAX_BYTES_PER_SESSION: f64 = 1024.0;
+
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
 /// Creates the per-session state that `remove_session` must clean up, then
 /// removes the session. A full `SessionHandle` would allocate so much
 /// unrelated memory that a small leak would be lost in the noise.
 fn populate_and_evict(agent: &MvpAgent, i: usize) {
     let sid = acp::SessionId::new(format!("soak-{i}"));
+<<<<<<< HEAD
+=======
+
+    // The same workspace binding `spawn_session_actor` creates; if
+    // `remove_session` does not release it, the session map holds every
+    // toolset for the life of the process.
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
     {
         let ops = agent.workspace_ops.borrow();
         let ops = ops.as_ref().expect("test installs workspace ops");
@@ -25,6 +46,10 @@ fn populate_and_evict(agent: &MvpAgent, i: usize) {
         )
         .expect("bind_local_session must succeed");
     }
+<<<<<<< HEAD
+=======
+
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
     let (_ptx, prx) = tokio::sync::mpsc::unbounded_channel::<PermissionEvent>();
     agent
         .permission_event_receivers
@@ -38,8 +63,15 @@ fn populate_and_evict(agent: &MvpAgent, i: usize) {
         sid.0.to_string(),
         acp::ModelId::new(std::sync::Arc::from("gone-model")),
     );
+<<<<<<< HEAD
     agent.remove_session(&sid);
 }
+=======
+
+    agent.remove_session(&sid);
+}
+
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
 /// Waits for background tasks to finish before reading heap stats.
 async fn quiesce() {
     const YIELD_ROUNDS: usize = 50;
@@ -52,32 +84,58 @@ async fn quiesce() {
         tokio::task::yield_now().await;
     }
 }
+<<<<<<< HEAD
+=======
+
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
 /// Creating and removing N sessions must not grow the heap.
 ///
 /// Only one `dhat::Profiler` can exist at a time, and the test harness runs
 /// tests in parallel, so keep this the only test that creates one.
 #[test]
+<<<<<<< HEAD
+=======
+#[ignore = "heap soak; nightly only, needs --features dhat-heap"]
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
 fn leader_session_lifecycle_heap_steady_state() {
     run_local_for_bridge_test(|| async {
         let agent = build_minimal_agent_for_tests();
         *agent.workspace_ops.borrow_mut() = Some(xai_grok_workspace::WorkspaceOps::for_test());
         let _profiler = dhat::Profiler::builder().testing().build();
+<<<<<<< HEAD
         const WARMUP: usize = 16;
         const MEASURE: usize = 256;
+=======
+
+        const WARMUP: usize = 16;
+        const MEASURE: usize = 256;
+
+        // The first runs fill caches and one-time allocations; do them before
+        // the measured window so they do not count as growth.
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
         for i in 0..WARMUP {
             populate_and_evict(&agent, i);
         }
         quiesce().await;
         let before = dhat::HeapStats::get();
+<<<<<<< HEAD
+=======
+
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
         for i in WARMUP..(WARMUP + MEASURE) {
             populate_and_evict(&agent, i);
         }
         quiesce().await;
         let after = dhat::HeapStats::get();
+<<<<<<< HEAD
+=======
+
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
         let d_blocks = after.curr_blocks as i64 - before.curr_blocks as i64;
         let d_bytes = after.curr_bytes as i64 - before.curr_bytes as i64;
         let blocks_per = d_blocks as f64 / MEASURE as f64;
         let bytes_per = d_bytes as f64 / MEASURE as f64;
+<<<<<<< HEAD
         eprintln!(
             "DHAT_SOAK_SUMMARY {}",
             serde_json::json!({ "warmup_sessions" : WARMUP,
@@ -89,6 +147,26 @@ fn leader_session_lifecycle_heap_steady_state() {
             "pass" : blocks_per < MAX_BLOCKS_PER_SESSION && bytes_per <
             MAX_BYTES_PER_SESSION })
         );
+=======
+        // Printed before the asserts so failing runs still show the numbers.
+        eprintln!(
+            "DHAT_SOAK_SUMMARY {}",
+            serde_json::json!({
+                "warmup_sessions": WARMUP,
+                "measured_sessions": MEASURE,
+                "before_blocks": before.curr_blocks,
+                "before_bytes": before.curr_bytes,
+                "after_blocks": after.curr_blocks,
+                "after_bytes": after.curr_bytes,
+                "blocks_per_session": blocks_per,
+                "bytes_per_session": bytes_per,
+                "max_blocks_per_session": MAX_BLOCKS_PER_SESSION,
+                "max_bytes_per_session": MAX_BYTES_PER_SESSION,
+                "pass": blocks_per < MAX_BLOCKS_PER_SESSION && bytes_per < MAX_BYTES_PER_SESSION
+            })
+        );
+
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
         assert!(
             blocks_per < MAX_BLOCKS_PER_SESSION,
             "block-count leak: {blocks_per:.3} blocks/session retained ({d_blocks} over {MEASURE} cycles) exceeds the {MAX_BLOCKS_PER_SESSION} gate"

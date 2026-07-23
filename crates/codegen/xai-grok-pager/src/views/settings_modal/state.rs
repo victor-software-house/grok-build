@@ -254,6 +254,21 @@ impl SettingsModalState {
         }
     }
 
+    /// Focus a setting by registry key (Browse mode). Returns whether the
+    /// key was found; no-op if missing.
+    pub fn focus_key(&mut self, key: &str) -> bool {
+        if let Some(idx) = self
+            .rows
+            .iter()
+            .position(|r| matches!(r, RowEntry::Setting { key: k, .. } if *k == key))
+        {
+            self.selected = idx;
+            self.clamp_selected_to_visible();
+            return true;
+        }
+        false
+    }
+
     /// Filtered row indices in render order.
     pub fn filtered_indices(&self) -> &[usize] {
         &self.filtered_cache
@@ -853,6 +868,10 @@ pub(super) fn action_for_bool(key: SettingKey, new: bool) -> Option<Action> {
         "prompt_suggestions" => Some(Action::SetPromptSuggestions(new)),
         "respect_manual_folds" => Some(Action::SetRespectManualFolds(new)),
         "page_flip_on_send" => Some(Action::SetPageFlipOnSend(new)),
+<<<<<<< HEAD
+=======
+        "combine_queued_prompts" => Some(Action::SetCombineQueuedPrompts(new)),
+>>>>>>> a5727c5960452e7527a154b25cb5bf00cda0545e
         "invert_scroll" => Some(Action::SetInvertScroll(new)),
         "show_tips" => Some(Action::SetShowTips(new)),
         "auto_update" => Some(Action::SetAutoUpdate(new)),
