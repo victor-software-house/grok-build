@@ -2,9 +2,15 @@
 //! background commands running (one plain "Worked for" marker), and each
 //! released flag lands a completion chip and the auto-wake response with NO
 //! wake-end marker after it, while every earlier line stays unchanged above
+<<<<<<< HEAD
 //! (nothing mutates). The persistent "watching · N commands" status row above
 //! the prompt counts the remaining work down between wakes and disappears
 //! once nothing is left; no "still running" copy appears anywhere.
+=======
+//! (nothing mutates). The persistent "N commands still running" status row
+//! above the prompt counts the remaining work down between wakes and
+//! disappears once nothing is left; markers never carry that copy as a suffix.
+>>>>>>> 6e386420825bd44ae648c63e7c8cba12fcec9401
 //!
 //! Positional chain asserted at the end: marker < chip < wake reply < chip <
 //! reply < chip < reply — exactly ONE "Worked for" total (the user turn's).
@@ -30,6 +36,7 @@ async fn endline_wakeups_are_markerless() {
         .collect();
 
     // The turn backgrounds one flag-gated command per tool call…
+<<<<<<< HEAD
     for (i, flag) in flags.iter().enumerate() {
         let args = json!({
             "command": format!(
@@ -76,6 +83,35 @@ async fn endline_wakeups_are_markerless() {
             ScriptedResponse::sse(chat_completions_message_events(text)),
         );
     }
+=======
+    let _background_turns: Vec<_> = flags
+        .iter()
+        .enumerate()
+        .map(|(i, flag)| {
+            let args = json!({
+                "command": format!(
+                    "while [ ! -e {} ]; do /bin/sleep 0.2; done",
+                    flag.display()
+                ),
+                "description": format!("flag-gated command {i}"),
+                "is_background": true
+            })
+            .to_string();
+            expect_tool_turn(
+                &content,
+                &format!("call_endline_status_{i}"),
+                "run_terminal_command",
+                args,
+            )
+        })
+        .collect();
+    // …then a text response ends it with all three still running, followed by
+    // one response for each auto-wake.
+    let _settled_turn = content.expect_agent_turn("initial settled turn", "STATUS_TURN_SETTLED");
+    let _wake_one = content.expect_agent_turn("first completion wake", "WAKE_REPLY_ONE");
+    let _wake_two = content.expect_agent_turn("second completion wake", "WAKE_REPLY_TWO");
+    let _wake_three = content.expect_agent_turn("third completion wake", "WAKE_REPLY_THREE");
+>>>>>>> 6e386420825bd44ae648c63e7c8cba12fcec9401
     content.set_response("STATUS_FALLBACK");
 
     let binary = pager_binary().expect("resolve pager binary");
@@ -117,7 +153,11 @@ async fn endline_wakeups_are_markerless() {
             )
         });
     harness
+<<<<<<< HEAD
         .wait_for_text("watching · 3 commands", Duration::from_secs(30))
+=======
+        .wait_for_text("3 commands still running", Duration::from_secs(30))
+>>>>>>> 6e386420825bd44ae648c63e7c8cba12fcec9401
         .unwrap_or_else(|_| {
             panic!(
                 "the watching cue never showed the running count; screen:\n{}",
@@ -134,7 +174,11 @@ async fn endline_wakeups_are_markerless() {
         let screen = harness.screen_contents();
         screen.contains("WAKE_REPLY_ONE")
             && screen.matches("Worked for").count() == 1
+<<<<<<< HEAD
             && screen.contains("watching · 2 commands")
+=======
+            && screen.contains("2 commands still running")
+>>>>>>> 6e386420825bd44ae648c63e7c8cba12fcec9401
     });
     assert!(
         wake_one,
@@ -149,7 +193,11 @@ async fn endline_wakeups_are_markerless() {
         let screen = harness.screen_contents();
         screen.contains("WAKE_REPLY_TWO")
             && screen.matches("Worked for").count() == 1
+<<<<<<< HEAD
             && screen.contains("watching · 1 command")
+=======
+            && screen.contains("1 command still running")
+>>>>>>> 6e386420825bd44ae648c63e7c8cba12fcec9401
     });
     assert!(
         wake_two,
@@ -158,14 +206,22 @@ async fn endline_wakeups_are_markerless() {
     );
 
     // Release flag 2: zero left — still exactly one marker, and the watching
+<<<<<<< HEAD
     // cue disappears entirely.
+=======
+    // cue disappears entirely (its "still running" copy leaves the screen).
+>>>>>>> 6e386420825bd44ae648c63e7c8cba12fcec9401
     std::fs::write(&flags[2], b"done").expect("release flag 2");
     let wake_three = wait_until(Duration::from_secs(45), || {
         harness.update(Duration::from_millis(100));
         let screen = harness.screen_contents();
         screen.contains("WAKE_REPLY_THREE")
             && screen.matches("Worked for").count() == 1
+<<<<<<< HEAD
             && !screen.contains("watching ·")
+=======
+            && !screen.contains("still running")
+>>>>>>> 6e386420825bd44ae648c63e7c8cba12fcec9401
     });
     assert!(
         wake_three,
@@ -174,7 +230,12 @@ async fn endline_wakeups_are_markerless() {
     );
 
     // Full chain, positional: marker < chip < reply < chip < reply < chip <
+<<<<<<< HEAD
     // reply — one marker total, and ZERO "still running" lines anywhere.
+=======
+    // reply — one marker total, and no marker carries a "still running"
+    // suffix (that copy belongs to the status row's cue, retired above).
+>>>>>>> 6e386420825bd44ae648c63e7c8cba12fcec9401
     let screen = harness.screen_contents();
     let chips: Vec<usize> = screen
         .match_indices("Task completed")
@@ -203,10 +264,19 @@ async fn endline_wakeups_are_markerless() {
             && chips[2] < w3,
         "chain out of order; screen:\n{screen}"
     );
+<<<<<<< HEAD
     assert_eq!(
         screen.matches("still running").count(),
         0,
         "no still-running copy may appear in the transcript; screen:\n{screen}"
+=======
+    assert!(
+        screen
+            .lines()
+            .filter(|l| l.contains("Worked for"))
+            .all(|l| !l.contains("still running")),
+        "markers must never carry a still-running suffix; screen:\n{screen}"
+>>>>>>> 6e386420825bd44ae648c63e7c8cba12fcec9401
     );
 
     write_cast_if_requested(&harness, "endline_wakeups_are_markerless.cast");
