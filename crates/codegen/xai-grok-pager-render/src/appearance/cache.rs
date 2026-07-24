@@ -31,6 +31,11 @@ const TIMESTAMPS_DEFAULT: bool = true;
 /// const context and the effective-config fallback read.
 const TIMELINE_DEFAULT: bool = UiConfig::SHOW_TIMELINE_DEFAULT;
 const PAGE_FLIP_ON_SEND_DEFAULT: bool = UiConfig::PAGE_FLIP_ON_SEND_DEFAULT;
+<<<<<<< HEAD
+=======
+/// Combine-queued-prompts rollout flag defaults OFF (opt-in).
+const COMBINE_QUEUED_PROMPTS_DEFAULT: bool = false;
+>>>>>>> 69f0ba880aa98f55e3ac1dcc570e2f332f825fe2
 const SIMPLE_MODE_DEFAULT: bool = true;
 /// Vim-mode scrollback default — matches the previous on-disk default.
 const VIM_MODE_DEFAULT: bool = false;
@@ -164,6 +169,38 @@ pub fn set_page_flip_on_send(enabled: bool) {
     PAGE_FLIP_ON_SEND_LOADED.with(|l| l.set(true));
 }
 
+<<<<<<< HEAD
+=======
+// -- Combine queued prompts ---------------------------------------------------
+
+thread_local! {
+    static COMBINE_QUEUED_PROMPTS_CURRENT: Cell<bool> =
+        const { Cell::new(COMBINE_QUEUED_PROMPTS_DEFAULT) };
+    static COMBINE_QUEUED_PROMPTS_LOADED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Cached `combine_queued_prompts`, seeding from `[ui]` on first call.
+pub fn load_combine_queued_prompts() -> bool {
+    COMBINE_QUEUED_PROMPTS_LOADED.with(|loaded| {
+        if !loaded.get() {
+            COMBINE_QUEUED_PROMPTS_CURRENT.with(|c| {
+                c.set(load_bool_from_effective_config(
+                    "combine_queued_prompts",
+                    COMBINE_QUEUED_PROMPTS_DEFAULT,
+                ))
+            });
+            loaded.set(true);
+        }
+    });
+    COMBINE_QUEUED_PROMPTS_CURRENT.with(|c| c.get())
+}
+
+pub fn set_combine_queued_prompts(enabled: bool) {
+    COMBINE_QUEUED_PROMPTS_CURRENT.with(|c| c.set(enabled));
+    COMBINE_QUEUED_PROMPTS_LOADED.with(|l| l.set(true));
+}
+
+>>>>>>> 69f0ba880aa98f55e3ac1dcc570e2f332f825fe2
 // -- Simple mode --------------------------------------------------------------
 
 thread_local! {
@@ -575,6 +612,13 @@ pub fn prime(ui: &UiConfig) {
     set_timestamps(ui.show_timestamps.unwrap_or(TIMESTAMPS_DEFAULT));
     set_show_timeline(ui.show_timeline_enabled());
     set_page_flip_on_send(ui.page_flip_on_send_enabled());
+<<<<<<< HEAD
+=======
+    set_combine_queued_prompts(
+        ui.combine_queued_prompts
+            .unwrap_or(COMBINE_QUEUED_PROMPTS_DEFAULT),
+    );
+>>>>>>> 69f0ba880aa98f55e3ac1dcc570e2f332f825fe2
     set_simple_mode(ui.simple_mode.unwrap_or(SIMPLE_MODE_DEFAULT));
     set_keep_text_selection(text_selection_from_ui(ui));
     // Layered-config keys (not the `UiConfig` arg) — seed so the first frame
@@ -687,6 +731,14 @@ mod tests {
         assert_eq!(TIMESTAMPS_DEFAULT, ui.show_timestamps.unwrap_or(true));
         assert_eq!(TIMELINE_DEFAULT, ui.show_timeline_enabled());
         assert_eq!(PAGE_FLIP_ON_SEND_DEFAULT, ui.page_flip_on_send_enabled());
+<<<<<<< HEAD
+=======
+        assert_eq!(
+            COMBINE_QUEUED_PROMPTS_DEFAULT,
+            ui.combine_queued_prompts
+                .unwrap_or(COMBINE_QUEUED_PROMPTS_DEFAULT)
+        );
+>>>>>>> 69f0ba880aa98f55e3ac1dcc570e2f332f825fe2
         assert_eq!(SIMPLE_MODE_DEFAULT, ui.simple_mode.unwrap_or(true));
         assert_eq!(VIM_MODE_DEFAULT, ui.vim_mode.unwrap_or(false));
         assert_eq!(
@@ -770,6 +822,21 @@ mod tests {
     }
 
     #[test]
+<<<<<<< HEAD
+=======
+    fn set_then_load_round_trips_combine_queued_prompts() {
+        std::thread::spawn(|| {
+            set_combine_queued_prompts(true);
+            assert!(load_combine_queued_prompts());
+            set_combine_queued_prompts(false);
+            assert!(!load_combine_queued_prompts());
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+>>>>>>> 69f0ba880aa98f55e3ac1dcc570e2f332f825fe2
     fn set_then_load_round_trips_simple_mode() {
         std::thread::spawn(|| {
             set_simple_mode(false);

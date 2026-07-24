@@ -71,6 +71,10 @@ fn pending_input(prompt_id: &str) -> (InputItem, oneshot::Receiver<PromptTurnRes
         json_schema: None,
         origin: crate::session::PromptOrigin::User,
         task_wake_fallback: None,
+<<<<<<< HEAD
+=======
+        tool_overrides_update: None,
+>>>>>>> 69f0ba880aa98f55e3ac1dcc570e2f332f825fe2
         respond_to,
         persist_ack: None,
         parsed_prompt_tx: None,
@@ -155,6 +159,7 @@ async fn normal_completion_persists_turn_completed_after_buffered_delta_flush() 
                         completion_kind: PromptCompletionKind::Completed,
                         structured_output: None,
                         usage: None,
+                        tool_overrides: None,
                     }),
                 )
                 .await;
@@ -501,6 +506,7 @@ async fn removed_from_queue_completion_emits_no_turn_completed() {
                         completion_kind: PromptCompletionKind::RemovedFromQueue,
                         structured_output: None,
                         usage: None,
+                        tool_overrides: None,
                     }),
                 )
                 .await;
@@ -544,6 +550,7 @@ async fn unknown_prompt_completion_emits_no_turn_completed() {
                         completion_kind: PromptCompletionKind::Completed,
                         structured_output: None,
                         usage: None,
+                        tool_overrides: None,
                     }),
                 )
                 .await;
